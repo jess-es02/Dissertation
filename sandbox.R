@@ -1,0 +1,5 @@
+library(tidyverse)
+library(janitor)
+options(java.parameters = "-Xmx2G")
+library(r5r)
+library(UK2GTFS)
