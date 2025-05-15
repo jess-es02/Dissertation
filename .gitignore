@@ -1,9 +1,16 @@
+#files
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+.Rprofile
 
+#folders
 old_code/
 rjavaenv/
 
-*.zip #ignore timetable zip files
+#ignore timetable zip files
+*.zip 
+
+#oa shapefile
+data/OA_2021_EW_BFC_V8.*

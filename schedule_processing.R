@@ -8,6 +8,8 @@ library(janitor)
 library(sf)
 library(tmap)
 library(tmaptools)
+options(java.parameters = "-Xmx2G")
+library(r5r)
 
 # ------ Build GTFS network ---------
 
