@@ -2,3 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
+
+old_code/
+rjavaenv/
+
+*.zip #ignore timetable zip files

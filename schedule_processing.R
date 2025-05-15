@@ -167,7 +167,8 @@ workforce_centroids <- oas %>%
   summarise(
     weighted_lat = sum(lat * working_pop)/sum(working_pop),
     weighted_lon = sum(long * working_pop)/sum(working_pop))%>%
-  st_as_sf(., coords = c("weighted_lon", "weighted_lat"), crs=27700)
+  st_as_sf(., coords = c("weighted_lon", "weighted_lat"), crs=4326)%>%
+  st_transform(., 27700)
 
 #4) Origin Attributes
 
