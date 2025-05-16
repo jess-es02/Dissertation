@@ -8,16 +8,17 @@ library(janitor)
 library(sf)
 library(tmap)
 library(tmaptools)
+library(osmextract)
 options(java.parameters = "-Xmx2G")
 library(r5r)
 
 # ------ Build GTFS network ---------
 
 #Convert London transport network to GTFS
-# path <- "london_traveline.zip"
+# path <- "large_data/london_traveline.zip"
 # gtfs <- transxchange2gtfs(path_in = path, ncores = 3)
 # gtfs <- gtfs_merge(gtfs, force = TRUE)
-# gtfs_write(gtfs, folder = getwd(), name = "gtfs_london")
+# gtfs_write(gtfs, folder = "large_data", name = "gtfs_london")
 
 #Load in created network
 gtfs <- read_gtfs("gtfs_london.zip")
@@ -112,6 +113,12 @@ summary(gtfs)
 # #Could lead to inaccurate network representation
 # #But changing this could disrupt the network
 # #So next step is to see what TfL accessibility data looks like - need to compare to this
+
+# -------- Download street network --------
+osm_path <- oe_get("Greater London", 
+                   provider = "geofabrik", 
+                   download_directory = getwd(),
+                   download_only = TRUE)
 
 # ------- Prepare other necessary data -------
 
@@ -217,3 +224,4 @@ rm(london_codes, lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability)
 
 # -------- Basic r5r query -----------
 
+#Some centroids don't lie on roads - need to make sure it is still getting these in the query output!

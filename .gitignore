@@ -8,9 +8,7 @@
 #folders
 old_code/
 rjavaenv/
-
-#ignore timetable zip files
-*.zip 
+large_data/
 
 #oa shapefile
 data/OA_2021_EW_BFC_V8.*
