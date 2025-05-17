@@ -12,3 +12,6 @@ large_data/
 
 #oa shapefile
 data/OA_2021_EW_BFC_V8.*
+
+#qgis
+data_vis.qgz

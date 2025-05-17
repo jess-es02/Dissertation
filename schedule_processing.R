@@ -9,28 +9,72 @@ library(sf)
 library(tmap)
 library(tmaptools)
 library(osmextract)
+library(httr)
+library(jsonlite)
 options(java.parameters = "-Xmx2G")
 library(r5r)
 
 # ------ Build GTFS network ---------
 
 #Convert London transport network to GTFS
-# path <- "large_data/london_traveline.zip"
-# gtfs <- transxchange2gtfs(path_in = path, ncores = 3)
-# gtfs <- gtfs_merge(gtfs, force = TRUE)
-# gtfs_write(gtfs, folder = "large_data", name = "gtfs_london")
+path <- "large_data/london_traveline.zip"
+gtfs <- transxchange2gtfs(path_in = path, silent = FALSE, ncores = 3)
 
-#Load in created network
-gtfs <- read_gtfs("gtfs_london.zip")
-gtfs$stops <- gtfs$stops %>%
-  mutate(stop_lon = as.numeric(stop_lon))
-summary(gtfs)
+#Fix inconsistency in the network: some stops are mentioned in gtfs$stop_times but not gtfs$stpops
+#Adding stops from TfL which aren't in NaPTAN dataset
+
+#First, find stop ids which are in stop_times but not stops
+missing_stop_ids <- setdiff(unique(gtfs$stop_times$stop_id), gtfs$stops$stop_id)
+
+#Get TfL API key from root R environment
+api_key <- Sys.getenv("tfl_api_key")
+
+#Function to query a single stop
+get_stop_id <- function(stop_id) {
+  url <- paste0('https://api.tfl.gov.uk/StopPoint/', stop_id, "?app_key=", api_key)
+  response <- GET(url)
+
+  if(status_code(response) == 200){
+    text <- content(response, as = "text", encoding = "UTF-8") 
+    stop_data <- fromJSON(text)
+    
+    data.frame(
+      gtfs_id = stop_id,
+      tfl_id = stop_data$naptanId,
+      stop_name = stop_data$commonName,
+      lat = stop_data$lat,
+      lon = stop_data$lon
+      )
+  } else {
+    warning(paste("Could not find stop ID", stop_id))
+    return(NULL)
+  }
+}
+
+#Get information for all
+extra_stop_ids <- missing_stop_ids %>%
+  map(get_stop_id)%>%
+  list_rbind()
+
+#Check whether NAPTAN ID is already in gtfs$stops
+extra_stop_ids %>%
+  filter(tfl_id %in% gtfs$stops$stop_id) #no duplicates
+
+#It looks like TfL IDs are a different format to GTFS - let's add the GTFS IDs first, and TfL later
+#Append new GTFS IDs to gtfs$stops
+stops_to_append <- extra_stop_ids%>%
+  mutate("stop_code" = NA)%>%
+  rename("stop_id" = gtfs_id,
+         "stop_lon" = lon,
+         "stop_lat" = lat)%>%
+  select(stop_id, stop_code, stop_name, stop_lon, stop_lat)
+gtfs$stops <- rbind(gtfs$stops, stops_to_append)
+rm(stops_to_append)
 
 #Filter out ferries
 gtfs <- filter_by_route_type(gtfs, route_type = 4, keep = FALSE)
-summary(gtfs)
 
-#Filter out cable car
+#Filter out cable car (currently classed as a bus)
 gtfs$routes <- gtfs$routes %>%
   filter(agency_id != "CAB")
 #Now ensure compatibility with other gtfs files
@@ -41,6 +85,38 @@ gtfs$stop_times <- gtfs$stop_times %>%
 gtfs$stops <- gtfs$stops %>%
   filter(stop_id %in% gtfs$stop_times$stop_id)
 summary(gtfs)
+
+#Convert calendar_date to date format
+gtfs$calendar_dates <- gtfs$calendar_dates %>%
+  mutate(date = as.Date(date, format = "%Y%m%d"))
+
+#Check GTFS object
+output_path <- tempfile("validation_result")
+validator_path <- download_validator(tempdir())
+validate_gtfs(gtfs, output_path, validator_path)
+
+#To look into:
+# - duplicate route names
+# - fast travel between stops (and stops further away)
+
+#Write completed object locally
+#gtfs <- gtfs_merge(gtfs, force = TRUE)
+gtfs_write(gtfs, folder = "large_data", name = "gtfs_london")
+
+#Clean workspace XXX
+rm(path, missing_stop_ids, output_path, validator_path, extra_stop_ids)
+
+#Load in created network
+gtfs <- read_gtfs("large_data/gtfs_london.zip")
+gtfs$stops <- gtfs$stops %>%
+  mutate(stop_lon = as.numeric(stop_lon))
+summary(gtfs)
+
+# ------ Create lookup table between GTFS IDs and TfL stop IDs ------
+#Just filter for stops where route_type = 1?
+#Then use API
+#Then look to parts below to QA network, e.g. having two Edgware Roads?
+#Or any TfL stops which aren't in GTFS?
 
 # ----- Match GTFS stop IDs and TfL stop IDs ------
 
@@ -115,10 +191,10 @@ summary(gtfs)
 # #So next step is to see what TfL accessibility data looks like - need to compare to this
 
 # -------- Download street network --------
-osm_path <- oe_get("Greater London", 
-                   provider = "geofabrik", 
-                   download_directory = getwd(),
-                   download_only = TRUE)
+# osm_path <- oe_get("Greater London",
+#                    provider = "geofabrik",
+#                    download_directory = "large_data",
+#                    download_only = TRUE)
 
 # ------- Prepare other necessary data -------
 
@@ -223,5 +299,19 @@ workforce_centroids <- workforce_centroids %>%
 rm(london_codes, lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability)
 
 # -------- Basic r5r query -----------
+r5r_core <- setup_r5(data_path = "large_data", verbose=TRUE)
+#Looks like lots of stops not linked to street network?
+#e.g. 109, 110
 
-#Some centroids don't lie on roads - need to make sure it is still getting these in the query output!
+#use accessibility function
+#see how long each takes - then add to for loop?
+
+#To do:
+# - Investigate problems in GTFS validator
+# - GTFS calendar looks wrong!
+# - Create NAPTAN/TfL ID lookup table
+# - Look into GTFS in more detail (see commented section) - e.g. multiple stops for Edgware Road
+# - See warnings with r5r_core setup - e.g. stops not linking to street network
+  # - See error message file
+# - Then see if running a basic r5r query works
+  # - Some centroids don't lie on roads - need to make sure it is still getting these in the query output!
