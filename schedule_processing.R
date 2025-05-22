@@ -14,7 +14,7 @@ library(jsonlite)
 options(java.parameters = "-Xmx2G")
 library(r5r)
 
-# ------ Build GTFS network ---------
+# ------ Build base GTFS network ---------
 
 #Convert London transport network to GTFS
 path <- "large_data/london_traveline.zip"
@@ -74,9 +74,11 @@ rm(stops_to_append)
 #Filter out ferries
 gtfs <- filter_by_route_type(gtfs, route_type = 4, keep = FALSE)
 
-#Filter out cable car (currently classed as a bus)
+#Filter out unwanted buses:
+#DBSE, BM, and SS are non-TfL (coaches/buses to Heathrow)
+#Cable car is currently classed as a bus
 gtfs$routes <- gtfs$routes %>%
-  filter(agency_id != "CAB")
+  filter(!agency_id %in% c("CAB", "DBSE", "BM", "SS"))
 #Now ensure compatibility with other gtfs files
 gtfs$trips <- gtfs$trips %>%
   filter(route_id %in% gtfs$routes$route_id)
@@ -90,21 +92,49 @@ summary(gtfs)
 gtfs$calendar_dates <- gtfs$calendar_dates %>%
   mutate(date = as.Date(date, format = "%Y%m%d"))
 
+#Brief look into "duplicate" routes
+duplicate_routes <- gtfs$routes %>%
+  group_by(route_long_name, route_short_name) %>%
+  filter(n() > 1) %>%
+  ungroup()
+duplicate_routes %>% distinct(route_id) %>% nrow() #each is a different route, hopefully should be fine
+
+#Manually correcting incorrect route information
+#check <- gtfs$stop_times %>% filter(trip_id == 'VJ48S2y051119Su')%>%left_join(., gtfs$stops, by="stop_id")
+
+#Sort 'Willow Lawn (Ruislip Lido Railway)' - it has the wrong ID
+#Change ID to 9400ZZRLWLN
+gtfs$stops <- gtfs$stops %>%
+  mutate(stop_id = if_else(stop_id == '9400ZZLUHPC2', '9400ZZRLWLN', stop_id))
+#Create a duplicate of Hyde Park Corner with 9400ZZLUHPC2
+hpc_row <- data.frame(stop_id = '9400ZZLUHPC2', stop_code = NA, stop_name = 'Hyde Park Corner Underground Station', stop_lon = -0.153129, stop_lat = 51.50278)
+gtfs$stops <- rbind(gtfs$stops, hpc_row)
+
+#The NAPTAN dataset contains two Oakhill Roads with the same stop ID in different locations
+#Oakhill Road Sutton should have different coordinates - the TfL ID corresponds to a different NAPTAN code
+#490002334ZT should be on the S2, rather than 490013611E at present
+#490002334ZT is not in gtfs$stops
+#490013611E is in the same place as 490010487E, which is a functioning stop for the 255
+#So we will update the coordinates for 490013611E to reflect stop 490002334ZT, recognising that this does not fully match the NAPTAN data
+gtfs$stops <- gtfs$stops %>%
+  mutate(stop_lon = if_else(stop_id == '490013611E', -0.19446, stop_lon),
+         stop_lat = if_else(stop_id == '490013611E', 51.37127, stop_lat))
+
+#There are still unrealistic travel times between some consecutive stops 
+#But the stops seem to be in the right location - it is a limitation of the timetabling
+#e.g. stop 1: 10:59:59 -> stop 2: 11:00:00
+
 #Check GTFS object
 output_path <- tempfile("validation_result")
 validator_path <- download_validator(tempdir())
 validate_gtfs(gtfs, output_path, validator_path)
 
-#To look into:
-# - duplicate route names
-# - fast travel between stops (and stops further away)
-
 #Write completed object locally
 #gtfs <- gtfs_merge(gtfs, force = TRUE)
 gtfs_write(gtfs, folder = "large_data", name = "gtfs_london")
 
-#Clean workspace XXX
-rm(path, missing_stop_ids, output_path, validator_path, extra_stop_ids)
+#Clean workspace
+rm(path, missing_stop_ids, output_path, validator_path, extra_stop_ids, hpc_row)
 
 #Load in created network
 gtfs <- read_gtfs("large_data/gtfs_london.zip")
@@ -302,16 +332,19 @@ rm(london_codes, lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability)
 r5r_core <- setup_r5(data_path = "large_data", verbose=TRUE)
 #Looks like lots of stops not linked to street network?
 #e.g. 109, 110
+#if it doesn't work, could a problem be that it is stored in the same folder as transxchange?
 
 #use accessibility function
 #see how long each takes - then add to for loop?
+# - trams classed as 0 - check whether these are included in prompt
 
 #To do:
-# - Investigate problems in GTFS validator
-# - GTFS calendar looks wrong!
+# - Reinstall Java - set up for an earlier version
+# - GTFS calendar looks wrong! Not enough services, and only available on one day?
 # - Create NAPTAN/TfL ID lookup table
 # - Look into GTFS in more detail (see commented section) - e.g. multiple stops for Edgware Road
 # - See warnings with r5r_core setup - e.g. stops not linking to street network
   # - See error message file
 # - Then see if running a basic r5r query works
   # - Some centroids don't lie on roads - need to make sure it is still getting these in the query output!
+# - run and explore gtfs_trips_sf(gtfs)
