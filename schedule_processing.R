@@ -330,17 +330,64 @@ rm(london_codes, lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability)
 
 # -------- Basic r5r query -----------
 r5r_core <- setup_r5(data_path = "large_data", verbose=TRUE)
-#Looks like lots of stops not linked to street network?
-#e.g. 109, 110
-#if it doesn't work, could a problem be that it is stored in the same folder as transxchange?
+
+#Check stops not joining to the street network
+
+#Identify stops in the network by running a sample query
+stop_coords <- gtfs$stops %>%
+  select(-stop_code)%>%
+  rename("id" = stop_id,
+         "lat" = stop_lat,
+         "lon" = stop_lon)
+sample_origin <- stop_coords %>%
+  filter(id == '9400ZZLULSQ1') #test origin = Leicester Square (fairly central)
+test_ttm <- travel_time_matrix(r5r_core,
+                               sample_origin,
+                               stop_coords,
+                               max_trip_duration = 5000L)
+test_ttm_pt <- travel_time_matrix(r5r_core,
+                               sample_origin,
+                               stop_coords,
+                               mode = c("WALK", "TRANSIT"),
+                               max_trip_duration = 5000L)
+#Extract stops in the network
+network_stops_walk <- test_ttm$to_id
+network_stops_pt <- test_ttm_pt$to_id
+stops_in_network <- stop_coords %>%
+  filter(id %in% network_stops_walk)%>%
+  st_as_sf(., coords = c("lon", "lat"), crs = 4326)
+stops_not_in_network <- stop_coords %>%
+  filter(!id %in% network_stops_walk)%>%
+  st_as_sf(., coords = c("lon", "lat"), crs = 4326)
+stops_not_in_network_pt <- stop_coords %>%
+  filter(!id %in% network_stops_pt)%>%
+  st_as_sf(., coords = c("lon", "lat"), crs = 4326)
+#Export to QGIS for examination
+st_write(stops_in_network, "large_data/stops.gpkg", layer = "stops_in_network", driver = "GPKG")
+st_write(stops_not_in_network, "large_data/stops.gpkg", layer = "stops_not_in_network", driver = "GPKG", append = TRUE)
+st_write(stops_not_in_network_pt, "large_data/stops.gpkg", layer = "PTstops_not_in_network", driver = "GPKG", append = TRUE)
+st_write(london_lsoas, "large_data/london_lsoas.gpkg", layer = "london_lsoas", driver = "GPKG")
+#Clean workspace
+rm(test_ttm, sample_origin, stop_coords, stops_in_network, stops_not_in_network, network_stops_walk, network_stops_pt, stops_not_in_network_pt, test_ttm_pt)
+
+#So in London: all stops reachable by PT, not all reachable by foot
+#This makes sense for some (e.g. Heathrow), but what about Barking, Upney, Christchurch Road?
+#Stops in London to be sorted:
+#Barking: snap stations onto nearby footway?
+#Upney: move to entrance?
+#Christchurch Road: XXX
+#Also consider Sudbury - do we care? It is outside London
+
+#What to do about LSOAs outside of Greater London but receiving TfL services?
 
 #use accessibility function
 #see how long each takes - then add to for loop?
 # - trams classed as 0 - check whether these are included in prompt
 
 #To do:
-# - Reinstall Java - set up for an earlier version
-# - GTFS calendar looks wrong! Not enough services, and only available on one day?
+# - Extend out of London but TfL services only?
+# - Add to gitignore - potentially uploading Traveline data via DropBox or something, as specificities probs change?
+# - GTFS calendar looks wrong! Could API help?
 # - Create NAPTAN/TfL ID lookup table
 # - Look into GTFS in more detail (see commented section) - e.g. multiple stops for Edgware Road
 # - See warnings with r5r_core setup - e.g. stops not linking to street network
@@ -348,3 +395,9 @@ r5r_core <- setup_r5(data_path = "large_data", verbose=TRUE)
 # - Then see if running a basic r5r query works
   # - Some centroids don't lie on roads - need to make sure it is still getting these in the query output!
 # - run and explore gtfs_trips_sf(gtfs)
+
+#Basic vis I will need:
+# - public transport network
+# - public transport accessible network
+# - disability distribution
+# - workplace pop dist (autocorrelation?)
