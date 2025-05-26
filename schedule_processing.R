@@ -29,22 +29,28 @@ missing_stop_ids <- setdiff(unique(gtfs$stop_times$stop_id), gtfs$stops$stop_id)
 #Get TfL API key from root R environment
 api_key <- Sys.getenv("tfl_api_key")
 
-#Function to query a single stop
-get_stop_id <- function(stop_id) {
+#Function to query a single stop (add option for without coords for calling later)
+get_stop_id <- function(stop_id, with_coords = TRUE) {
   url <- paste0('https://api.tfl.gov.uk/StopPoint/', stop_id, "?app_key=", api_key)
   response <- GET(url)
-
-  if(status_code(response) == 200){
-    text <- content(response, as = "text", encoding = "UTF-8") 
+  #Get data
+  if (status_code(response) == 200) {
+    text <- content(response, as = "text", encoding = "UTF-8")
     stop_data <- fromJSON(text)
-    
-    data.frame(
-      gtfs_id = stop_id,
-      tfl_id = stop_data$naptanId,
-      stop_name = stop_data$commonName,
-      lat = stop_data$lat,
-      lon = stop_data$lon
-      )
+    #Don't request unnecessary data if we don't need coordinates!
+    if (with_coords) {
+      data.frame(
+        gtfs_id = stop_id,
+        tfl_id = stop_data$naptanId,
+        stop_name = stop_data$commonName,
+        lat = stop_data$lat,
+        lon = stop_data$lon)
+    } else {
+      data.frame(
+        gtfs_id = stop_id,
+        tfl_id = stop_data$naptanId,
+        stop_name = stop_data$commonName)
+    }
   } else {
     warning(paste("Could not find stop ID", stop_id))
     return(NULL)
@@ -100,7 +106,6 @@ duplicate_routes <- gtfs$routes %>%
 duplicate_routes %>% distinct(route_id) %>% nrow() #each is a different route, hopefully should be fine
 
 #Manually correcting incorrect route information
-#check <- gtfs$stop_times %>% filter(trip_id == 'VJ48S2y051119Su')%>%left_join(., gtfs$stops, by="stop_id")
 
 #Sort 'Willow Lawn (Ruislip Lido Railway)' - it has the wrong ID
 #Change ID to 9400ZZRLWLN
@@ -133,7 +138,6 @@ validate_gtfs(gtfs, output_path, validator_path)
 #gtfs <- gtfs_merge(gtfs, force = TRUE)
 gtfs_write(gtfs, folder = "large_data", name = "gtfs_london")
 
-#Clean workspace
 rm(path, missing_stop_ids, output_path, validator_path, extra_stop_ids, hpc_row)
 
 #Load in created network
@@ -143,92 +147,30 @@ gtfs$stops <- gtfs$stops %>%
 summary(gtfs)
 
 # ------ Create lookup table between GTFS IDs and TfL stop IDs ------
-#Just filter for stops where route_type = 1?
-#Then use API
-#Then look to parts below to QA network, e.g. having two Edgware Roads?
-#Or any TfL stops which aren't in GTFS?
 
-# ----- Match GTFS stop IDs and TfL stop IDs ------
+#Filter to only stops on London Underground routes (route_type = 1); bus, DLR, and tram are fully accessible
+tube_trips <- gtfs$routes %>%
+  filter(route_type == 1)%>%
+  left_join(., gtfs$trips, by ="route_id")%>%
+  distinct()
+stops_on_tube_trips <- tube_trips %>%
+  select(trip_id)%>%
+  left_join(., gtfs$stop_times, by="trip_id")%>%
+  select(stop_id)%>%
+  distinct()
+tube_stops <- stops_on_tube_trips$stop_id
+rm(tube_trips, stops_on_tube_trips)
 
-# #First, load in station list from TfL API 
-# station_list <- read_csv("data/station_list.csv")%>%
-#   clean_names() %>%
-#   select(name, unique_id)
-# 
-# #Example match - though it is often more complex than this!
-# #GTFS: 9400ZZLUGPK
-# #TfL: 940GZZLUGPK
-# 
-# view(gtfs$routes %>% 
-#   count(agency_id))
+#Use API to ensure that we have an associated TfL ID for each GTFS ID
+id_lookup <- tube_stops %>%
+  map(get_stop_id, with_coords=FALSE)%>%
+  list_rbind()
 
-#Relevant agency_ids:
-#DLR
-#LUL - LU
-#TCL - London Tramlink
-#Where is Overground???
+id_lookup %>% distinct(tfl_id) %>% nrow() #270 - correct (as there are two Edgware Roads and Hammersmiths)
 
-#All others are buses/coaches, except for:
+# ------- Prepare geographic and demographic data -------
 
-#Use routes, trips, and stop_times to add a column onto stops saying if it's LU, Overground, bus, etc.
-#Then use this for easier matching onto TfL
-#How do I know which platform stands for which?
-#Does it match with TfL data?
-
-
-#Could I use routes to ascertain which stations are on LU, Overground etc?
-#That way I can match IDs
-#And then QA
-
-# # ------ QA GTFS network ------
-# 
-# #Count total underground stations - we need to check it contains all stations (including those outside London)
-# 
-# #All stations
-# gtfs$stops %>%
-#   filter(str_detect(stop_id, "9400ZZLU")) %>%
-#   mutate(base_id = substr(stop_id, 1, 11))%>%
-#   distinct(base_id) %>%
-#   nrow()
-# 
-# #Find stations in TfL list which aren't in gtfs$stops
-# 
-# #First, we need to have a mutual column to join on
-# stops_base_id <- gtfs$stops %>%
-#   select(stop_id, stop_name) %>%
-#   filter(startsWith(stop_id, "9")) %>%
-#   mutate(base_id = substr(stop_id, 7, 11)) 
-# station_list <- station_list %>%
-#   filter(startsWith(unique_id, "9")) %>%
-#   mutate(base_id = substr(unique_id, 7, nchar(unique_id)))
-# station_list <- station_list %>%
-#   left_join(., stops_base_id, by = "base_id")
-# 
-# 
-# 
-# #To do:
-# # - Check missing stations
-# # - Check stations with multiple IDs (e.g. Edgware Road, Hammersmith)
-# # - Accessible network!
-# 
-# 
-# #Could do TfL network, query distance between adjacent stops with API?
-#   
-# #Note that there are some stations (e.g. Edgware road) with multiple stop names
-# #Search for bracket to find these
-# #Could lead to inaccurate network representation
-# #But changing this could disrupt the network
-# #So next step is to see what TfL accessibility data looks like - need to compare to this
-
-# -------- Download street network --------
-# osm_path <- oe_get("Greater London",
-#                    provider = "geofabrik",
-#                    download_directory = "large_data",
-#                    download_only = TRUE)
-
-# ------- Prepare other necessary data -------
-
-#1) London LSOAs
+#1) LSOAs - inside London, and close to stops
 #LSOA boundaries
 lsoas <- st_read("data/LSOA_2021_EW_BSC_V4.shp")%>%
   clean_names()%>%
@@ -240,8 +182,22 @@ london_codes <- read_csv("data/london_lsoas.csv")%>%
   clean_names()
 
 #Filter for only London LSOAs
-london_lsoas <- lsoas %>%
+london_lsoas <- lsoas %>%#
   filter(lsoa21cd %in% london_codes$lsoa21cd)
+
+#Add on any LSOAs with GTFS stops (even if they're outside of London)
+stop_locations <- gtfs$stops %>%
+ st_as_sf(., coords = c("stop_lon", "stop_lat"), crs=4326)%>%
+ st_transform(., 27700)
+
+#Let's do a 2km buffer, to reflect people who can feasibly walk to these stops
+stop_buffers <- st_buffer(stop_locations, dist = 2000)
+#Find LSOAs intersecting with the stop buffers
+stop_buffer_lsoas <- st_filter(lsoas, stop_buffers)
+ 
+#Combine all potential LSOAs: those in London, and those within 2km of a London transport stop
+study_lsoas <- rbind(london_lsoas, stop_buffer_lsoas)%>%
+ distinct(lsoa21cd, .keep_all = TRUE)
 
 #2) Origins: pop-weighted centroids
 #LSOA pop-weighted centroids
@@ -250,7 +206,7 @@ pop_centroids <- read_csv("data/lsoa_pop_weighted_centroids.csv")%>%
   st_as_sf(., coords = c("x", "y"), crs = 4326)%>%
   st_transform(., crs=27700)%>%
   select("lsoa21cd","geometry")%>%
-  filter(lsoa21cd %in% london_codes$lsoa21cd)
+  filter(lsoa21cd %in% study_lsoas$lsoa21cd)
 
 #3) Destinations: workplace-weighted centroids
 #The ONS does not release these, so we will estimate using OA-level data
@@ -262,7 +218,7 @@ oas <- st_read("data/OA_2021_EW_BFC_V8.shp")%>%
 
 #Filter for only OAs in London
 oas <- oas %>%
-  filter(lsoa21cd %in% london_lsoas$lsoa21cd)
+  filter(lsoa21cd %in% study_lsoas$lsoa21cd)
 
 #Load in OA-level working population
 working_pop_oa <- read_csv("data/workforce_pop_oa.csv")%>%
@@ -325,11 +281,28 @@ working_pop_lsoa <- read_csv("data/workforce_pop_lsoa.csv")%>%
 workforce_centroids <- workforce_centroids %>%
   left_join(., working_pop_lsoa, by="lsoa21cd")
 
-#Clean workspace
-rm(london_codes, lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability)
+rm(london_codes, lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability, london_lsoas, stop_buffers, stop_buffer_lsoas, stop_locations)
+
+# -------- Download street network --------
+
+#Union study area, so we can clip it to one boundary
+study_boundary <- study_lsoas %>% st_union()
+
+#Increase timeout
+old_timeout <- getOption("timeout")
+options(timeout = 3000)
+
+osm_path <- oe_get("England",
+                   #boundary = study_boundary,
+                   provider = "geofabrik",
+                   download_directory = "large_data2",
+                   download_only = TRUE)
+
+options(timeout = old_timeout)
+rm(old_timeout, study_boundary)
 
 # -------- Basic r5r query -----------
-r5r_core <- setup_r5(data_path = "large_data", verbose=TRUE)
+r5r_core <- setup_r5(data_path = "large_data", verbose=TRUE) #XXX NEED TO REDO WITH LARGER AREA
 
 #Check stops not joining to the street network
 
@@ -366,8 +339,7 @@ stops_not_in_network_pt <- stop_coords %>%
 st_write(stops_in_network, "large_data/stops.gpkg", layer = "stops_in_network", driver = "GPKG")
 st_write(stops_not_in_network, "large_data/stops.gpkg", layer = "stops_not_in_network", driver = "GPKG", append = TRUE)
 st_write(stops_not_in_network_pt, "large_data/stops.gpkg", layer = "PTstops_not_in_network", driver = "GPKG", append = TRUE)
-st_write(london_lsoas, "large_data/london_lsoas.gpkg", layer = "london_lsoas", driver = "GPKG")
-#Clean workspace
+st_write(study_lsoas, "large_data/study_lsoas.gpkg", layer = "study_lsoas", driver = "GPKG")
 rm(test_ttm, sample_origin, stop_coords, stops_in_network, stops_not_in_network, network_stops_walk, network_stops_pt, stops_not_in_network_pt, test_ttm_pt)
 
 #So in London: all stops reachable by PT, not all reachable by foot
@@ -376,25 +348,20 @@ rm(test_ttm, sample_origin, stop_coords, stops_in_network, stops_not_in_network,
 #Barking: snap stations onto nearby footway?
 #Upney: move to entrance?
 #Christchurch Road: XXX
-#Also consider Sudbury - do we care? It is outside London
+#Sudbury is outside London - looks like it's excluded due to a lack of street network data
 
-#What to do about LSOAs outside of Greater London but receiving TfL services?
-
-#use accessibility function
+#Use accessibility function
 #see how long each takes - then add to for loop?
 # - trams classed as 0 - check whether these are included in prompt
 
-#To do:
-# - Extend out of London but TfL services only?
-# - Add to gitignore - potentially uploading Traveline data via DropBox or something, as specificities probs change?
-# - GTFS calendar looks wrong! Could API help?
-# - Create NAPTAN/TfL ID lookup table
-# - Look into GTFS in more detail (see commented section) - e.g. multiple stops for Edgware Road
+# To do:
+# - Download street network - union counties after. Sort large_data2 vs 1
+# - GTFS calendar looks wrong! Quick check to see if I am being silly? Otherwise could TfL API help?
 # - See warnings with r5r_core setup - e.g. stops not linking to street network
   # - See error message file
-# - Then see if running a basic r5r query works
-  # - Some centroids don't lie on roads - need to make sure it is still getting these in the query output!
-# - run and explore gtfs_trips_sf(gtfs)
+# - Follow up re Overground
+# - Check work centroids are accessible
+# - Check pop centroids are accessible
 
 #Basic vis I will need:
 # - public transport network
