@@ -29,7 +29,8 @@ missing_stop_ids <- setdiff(unique(gtfs$stop_times$stop_id), gtfs$stops$stop_id)
 #Get TfL API key from root R environment
 api_key <- Sys.getenv("tfl_api_key")
 
-#Function to query a single stop (add option for without coords for calling later)
+#Function to query a single stop 
+#We add an option to get stop information without coordinates, for calling later
 get_stop_id <- function(stop_id, with_coords = TRUE) {
   url <- paste0('https://api.tfl.gov.uk/StopPoint/', stop_id, "?app_key=", api_key)
   response <- GET(url)
@@ -203,9 +204,10 @@ study_lsoas <- rbind(london_lsoas, stop_buffer_lsoas)%>%
 #LSOA pop-weighted centroids
 pop_centroids <- read_csv("data/lsoa_pop_weighted_centroids.csv")%>%
   clean_names()%>%
-  st_as_sf(., coords = c("x", "y"), crs = 4326)%>%
-  st_transform(., crs=27700)%>%
-  select("lsoa21cd","geometry")%>%
+  #st_as_sf(., coords = c("x", "y"), crs = 4326)%>%
+  #st_transform(., crs=27700)%>%
+  #select("lsoa21cd","geometry")%>%
+  select("lsoa21cd", "x", "y")%>%
   filter(lsoa21cd %in% study_lsoas$lsoa21cd)
 
 #3) Destinations: workplace-weighted centroids
@@ -284,84 +286,133 @@ workforce_centroids <- workforce_centroids %>%
 rm(london_codes, lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability, london_lsoas, stop_buffers, stop_buffer_lsoas, stop_locations)
 
 # -------- Download street network --------
+ 
+# #Union study area, so we can clip it to one boundary
+# study_boundary <- study_lsoas %>% st_union()
+# 
+# #Increase timeout
+# old_timeout <- getOption("timeout")
+# options(timeout = 3000)
+#
+# osm_path <- oe_get("England",
+#                    #boundary = study_boundary,
+#                    provider = "geofabrik",
+#                    download_directory = "large_data2",
+#                    download_only = TRUE)
+# 
+# options(timeout = old_timeout)
+# rm(old_timeout, study_boundary)
 
-#Union study area, so we can clip it to one boundary
-study_boundary <- study_lsoas %>% st_union()
-
-#Increase timeout
-old_timeout <- getOption("timeout")
-options(timeout = 3000)
-
-osm_path <- oe_get("England",
-                   #boundary = study_boundary,
-                   provider = "geofabrik",
-                   download_directory = "large_data2",
-                   download_only = TRUE)
-
-options(timeout = old_timeout)
-rm(old_timeout, study_boundary)
+#The above isn't working due to some problems with tags!
+#Trying a manual download from HOT Export Tool instead
 
 # -------- Basic r5r query -----------
 r5r_core <- setup_r5(data_path = "large_data", verbose=TRUE) #XXX NEED TO REDO WITH LARGER AREA
 
 #Check stops not joining to the street network
 
-#Identify stops in the network by running a sample query
-stop_coords <- gtfs$stops %>%
-  select(-stop_code)%>%
-  rename("id" = stop_id,
-         "lat" = stop_lat,
-         "lon" = stop_lon)
-sample_origin <- stop_coords %>%
-  filter(id == '9400ZZLULSQ1') #test origin = Leicester Square (fairly central)
-test_ttm <- travel_time_matrix(r5r_core,
-                               sample_origin,
-                               stop_coords,
-                               max_trip_duration = 5000L)
-test_ttm_pt <- travel_time_matrix(r5r_core,
-                               sample_origin,
-                               stop_coords,
-                               mode = c("WALK", "TRANSIT"),
-                               max_trip_duration = 5000L)
-#Extract stops in the network
-network_stops_walk <- test_ttm$to_id
-network_stops_pt <- test_ttm_pt$to_id
-stops_in_network <- stop_coords %>%
-  filter(id %in% network_stops_walk)%>%
-  st_as_sf(., coords = c("lon", "lat"), crs = 4326)
-stops_not_in_network <- stop_coords %>%
-  filter(!id %in% network_stops_walk)%>%
-  st_as_sf(., coords = c("lon", "lat"), crs = 4326)
-stops_not_in_network_pt <- stop_coords %>%
-  filter(!id %in% network_stops_pt)%>%
-  st_as_sf(., coords = c("lon", "lat"), crs = 4326)
-#Export to QGIS for examination
-st_write(stops_in_network, "large_data/stops.gpkg", layer = "stops_in_network", driver = "GPKG")
-st_write(stops_not_in_network, "large_data/stops.gpkg", layer = "stops_not_in_network", driver = "GPKG", append = TRUE)
-st_write(stops_not_in_network_pt, "large_data/stops.gpkg", layer = "PTstops_not_in_network", driver = "GPKG", append = TRUE)
-st_write(study_lsoas, "large_data/study_lsoas.gpkg", layer = "study_lsoas", driver = "GPKG")
-rm(test_ttm, sample_origin, stop_coords, stops_in_network, stops_not_in_network, network_stops_walk, network_stops_pt, stops_not_in_network_pt, test_ttm_pt)
+# #Identify stops in the network by running a sample query
+# stop_coords <- gtfs$stops %>%
+#   select(-stop_code)%>%
+#   rename("id" = stop_id,
+#          "lat" = stop_lat,
+#          "lon" = stop_lon)
+# sample_origin <- stop_coords %>%
+#   filter(id == '9400ZZLULSQ1') #test origin = Leicester Square (fairly central)
+# test_ttm <- travel_time_matrix(r5r_core,
+#                                sample_origin,
+#                                stop_coords,
+#                                max_trip_duration = 5000L)
+# test_ttm_pt <- travel_time_matrix(r5r_core,
+#                                sample_origin,
+#                                stop_coords,
+#                                mode = c("WALK", "TRANSIT"),
+#                                max_trip_duration = 5000L)
+# #Extract stops in the network
+# network_stops_walk <- test_ttm$to_id
+# network_stops_pt <- test_ttm_pt$to_id
+# stops_in_network <- stop_coords %>%
+#   filter(id %in% network_stops_walk)%>%
+#   st_as_sf(., coords = c("lon", "lat"), crs = 4326)
+# stops_not_in_network <- stop_coords %>%
+#   filter(!id %in% network_stops_walk)%>%
+#   st_as_sf(., coords = c("lon", "lat"), crs = 4326)
+# stops_not_in_network_pt <- stop_coords %>%
+#   filter(!id %in% network_stops_pt)%>%
+#   st_as_sf(., coords = c("lon", "lat"), crs = 4326)
+# #Export to QGIS for examination
+# st_write(stops_in_network, "large_data/stops_updated.gpkg", layer = "stops_in_network", driver = "GPKG")
+# st_write(stops_not_in_network, "large_data/stops_updated.gpkg", layer = "stops_not_in_network", driver = "GPKG", append = TRUE)
+# st_write(stops_not_in_network_pt, "large_data/stops.gpkg", layer = "PTstops_not_in_network", driver = "GPKG", append = TRUE)
+# st_write(study_lsoas, "large_data/study_lsoas.gpkg", layer = "study_lsoas", driver = "GPKG")
+# rm(test_ttm, sample_origin, stop_coords, stops_in_network, stops_not_in_network, network_stops_walk, network_stops_pt, stops_not_in_network_pt, test_ttm_pt)
 
 #So in London: all stops reachable by PT, not all reachable by foot
-#This makes sense for some (e.g. Heathrow), but what about Barking, Upney, Christchurch Road?
-#Stops in London to be sorted:
-#Barking: snap stations onto nearby footway?
-#Upney: move to entrance?
-#Christchurch Road: XXX
-#Sudbury is outside London - looks like it's excluded due to a lack of street network data
+#This makes sense for some (e.g. Heathrow), but need to manually sort the others
+
+#For stops we are going to move, save original coordinates:
+not_joined_stops <- c("490005233W", "9400ZZLUUPY1", "9400ZZLUBKG3", "9400ZZLUBKG2", "9400ZZLUBKG1")
+stops_pre_move <- gtfs$stops %>%
+  filter(stop_id %in% not_joined_stops)
+
+#Barking stops were excluded because they are closer to a private walkway - let's move them nearer the public-facing footpath
+barking_stops <- c("9400ZZLUBKG3", "9400ZZLUBKG2", "9400ZZLUBKG1")
+gtfs$stops <- gtfs$stops %>%
+  mutate(stop_lon = if_else(stop_id %in% barking_stops, 0.081114, stop_lon),
+         stop_lat = if_else(stop_id %in% barking_stops, 51.53926, stop_lat))
+rm(barking_stops)
+
+#Upney Underground station looks too far from a walkway - let's move it closer to the road (the only entrance is here anyway)
+gtfs$stops <- gtfs$stops %>%
+  mutate(stop_lon = if_else(stop_id == '9400ZZLUUPY1', 0.1014915, stop_lon),
+         stop_lat = if_else(stop_id == '9400ZZLUUPY1', 51.53846, stop_lat))
+
+#Not sure why Christchurch Road won't connect - but let's move it slightly closer to the main road to see if that works
+gtfs$stops <- gtfs$stops %>%
+  mutate(stop_lon = if_else(stop_id == '490005233W', 0.0973208, stop_lon),
+         stop_lat = if_else(stop_id == '490005233W', 51.42659, stop_lat))
+
+#Trying again with r5r_core
+gtfs_write(gtfs, folder = "test_stops", name = "gtfs_london")
+r5r_core <- setup_r5(data_path = "test_stops", verbose=TRUE)
+#Note there are some "invalid turn restriction" errors but nothing too serious
+
+#Check whether pop centroids are accessible
+pop_centroids_temp <- pop_centroids %>%
+  rename("id" = lsoa21cd,
+         "lon" = x,
+         "lat" = y)
+sample_origin <- pop_centroids_temp %>%
+  filter(id == 'E01000001')
+test_ttm <- travel_time_matrix(r5r_core,
+                              sample_origin,
+                              pop_centroids_temp,
+                              max_trip_duration = 5000L)
+pop_centroids_in_network <- test_ttm$to_id 
+missing_pop_centroids <- pop_centroids_temp %>% 
+  filter(! id %in% pop_centroids_in_network) %>%
+  st_as_sf(., coords = c("lon", "lat"), crs = 4326)%>%
+  st_transform(., crs=27700)
+all_pop_centroids <- pop_centroids_temp %>% 
+  st_as_sf(., coords = c("lon", "lat"), crs = 4326)%>%
+  st_transform(., crs=27700)
+st_write(all_pop_centroids, "large_data/pop_centroids.gpkg", layer = "all_pop_centroids", driver = "GPKG")
+st_write(missing_pop_centroids, "large_data/pop_centroids.gpkg", layer = "missing_pop_centroids", driver = "GPKG", append = TRUE)
+#One missing, in Hillingdon!
 
 #Use accessibility function
 #see how long each takes - then add to for loop?
 # - trams classed as 0 - check whether these are included in prompt
+# - make sure RRS are not running?!
 
 # To do:
-# - Download street network - union counties after. Sort large_data2 vs 1
+# - Download street network - union counties after.
 # - GTFS calendar looks wrong! Quick check to see if I am being silly? Otherwise could TfL API help?
-# - See warnings with r5r_core setup - e.g. stops not linking to street network
-  # - See error message file
 # - Follow up re Overground
 # - Check work centroids are accessible
 # - Check pop centroids are accessible
+# - When OSM is sorted, add to README which day it is from
+# - Sort large_data to have new network (in test_stops atm)
 
 #Basic vis I will need:
 # - public transport network
