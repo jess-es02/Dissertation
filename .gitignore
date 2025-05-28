@@ -6,12 +6,10 @@
 .Rprofile
 
 #folders
-old_code/
+old_code_and_data/
 rjavaenv/
 large_data/
-
-#oa shapefile
-data/OA_2021_EW_BFC_V8.*
+data_export_vis/
 
 #qgis
 data_vis.qgz

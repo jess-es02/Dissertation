@@ -7,7 +7,9 @@
   - If so, should probably upload Traveline (e.g. DropBox) because of all the specific things I have had to sort, e.g. problematic IDs - these are probably version-specific
 - Traveline data was downloaded 09/05/2025
 - Data excluded from gitignore - user would need to add:
-  - [OA shapefile](https://geoportal.statistics.gov.uk/datasets/31dac98df61a4312991646842b147e2f_0/explore?location=52.693294%2C-2.489483%2C6.49) - to add to data folder
+  - [OA shapefile](https://geoportal.statistics.gov.uk/datasets/31dac98df61a4312991646842b147e2f_0/explore?location=52.693294%2C-2.489483%2C6.49) - to add to large_data folder
   - Traveline London zip file (london_traveline.zip), alongside converted GTFS zip file (gtfs_london.zip), saved in large_data folder
-  - Also needs to run the osmextract line to download the London road network to the large_data folder
-  - User would need their own TfL Unified API key
+  - User would need their own TfL Unified API key, saved in .Renviron
+  - OSM road network, downloaded from bbike. Coords -0.768,51.175 x 0.499,51.821
+    - I originally tried using osmextract (more reproducible) but there were problems with some of the tags, stopping setup_r5 from completing successfully
+    - Note that I downloaded this data on 28/05/25

@@ -8,7 +8,6 @@ library(janitor)
 library(sf)
 library(tmap)
 library(tmaptools)
-library(osmextract)
 library(httr)
 library(jsonlite)
 options(java.parameters = "-Xmx2G")
@@ -229,17 +228,25 @@ pop_centroids <- read_csv("data/lsoa_pop_weighted_centroids.csv")%>%
          "lat" = y) %>%
   filter(id %in% study_lsoas$lsoa21cd)
 
-#Hillingdon 001E does not join to the r5r network because it's in a gated community
+#Two centroids do not join to the r5r network - manually moving these
+
+#a) Hillingdon 001E - in a gated community
 #Moving it very slightly so it aligns with the next (non-private) road over
 pop_centroids <- pop_centroids %>%
   mutate(lon = if_else(id == 'E01002482', -0.410789, lon),
          lat = if_else(id == 'E01002482', 51.61021, lat))
 
+#b) Mole Valley 001B - on a private road (a school)
+#Moving it to the closest non-private road
+pop_centroids <- pop_centroids %>%
+  mutate(lon = if_else(id == 'E01030508', -0.290414, lon),
+         lat = if_else(id == 'E01030508', 51.30765, lat))
+
 #3) Destinations: workplace-weighted centroids
 #The ONS does not release these, so we will estimate using OA-level data
 
 #First, load in OA shapefile
-oas <- st_read("data/OA_2021_EW_BFC_V8.shp")%>%
+oas <- st_read("large_data/OA_2021_EW_BFC_V8.shp")%>%
   clean_names() %>%
   select(oa21cd, lsoa21cd, lat, long) #this is a representative centroid which always falls inside the OA; different to a centroid
 
@@ -269,21 +276,21 @@ workforce_centroids <- oas %>%
   #st_as_sf(., coords = c("lon", "lat"), crs=4326)%>%
   #st_transform(., 27700)
 
-#Three centroids do not join to the r5r network - manually moving these
+#Five centroids do not join to the r5r network - manually moving these
 
-#1) Hillingdon 001E - on a gated road
+#a) Hillingdon 001E - on a gated road
 #Moving to the closest non-gated road
 workforce_centroids <- workforce_centroids %>%
   mutate(lon = if_else(id == 'E01002482', -0.41118, lon),
          lat = if_else(id == 'E01002482', 51.61036, lat))
 
-#2) Kingston upon Thames 020C - inside Chessington World of Adventures!
+#b) Kingston upon Thames 020C - inside Chessington World of Adventures!
 #Move coordinates to the park entrance
 workforce_centroids <- workforce_centroids %>%
   mutate(lon = if_else(id == 'E01002948', -0.314287, lon),
          lat = if_else(id == 'E01002948', 51.35000, lat))
 
-#3) Hillingdon 031A - inside Heathrow
+#c) Hillingdon 031A - inside Heathrow
 #Tricky to find an optimal place to move the centroid, because r5r does not support indoor routing
 #Let's move to a spot very close to the PT stops and see if that works
 workforce_centroids <- workforce_centroids %>%
@@ -291,6 +298,17 @@ workforce_centroids <- workforce_centroids %>%
          lat = if_else(id == 'E01002444', 51.47121, lat))
 #This is the only spot I found which works
 #But is likely to overestimate accessibility to jobs as it is so close to the station entrance - in reality, people would have to walk more
+
+#d) Three Rivers 011B - inside an RAF base
+#Move coordinates to the entrance
+workforce_centroids <- workforce_centroids %>%
+  mutate(lon = if_else(id == 'E01023840', -0.408365, lon),
+         lat = if_else(id == 'E01023840', 51.61951, lat))
+
+#e) Buckinghamshire 064C - on a golf course
+workforce_centroids <- workforce_centroids %>%
+  mutate(lon = if_else(id == 'E01017832', -0.598008, lon),
+         lat = if_else(id == 'E01017832', 51.53627, lat))
 
 #4) Origin Attributes
 
@@ -334,27 +352,6 @@ workforce_centroids <- workforce_centroids %>%
 
 rm(london_codes, lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability, london_lsoas, stop_buffers, stop_buffer_lsoas, stop_locations)
 
-# -------- Download street network --------
- 
-# #Union study area, so we can clip it to one boundary
-# study_boundary <- study_lsoas %>% st_union()
-# 
-# #Increase timeout
-# old_timeout <- getOption("timeout")
-# options(timeout = 3000)
-#
-# osm_path <- oe_get("England",
-#                    #boundary = study_boundary,
-#                    provider = "geofabrik",
-#                    download_directory = "large_data2",
-#                    download_only = TRUE)
-# 
-# options(timeout = old_timeout)
-# rm(old_timeout, study_boundary)
-
-#The above isn't working due to some problems with tags!
-#Trying a manual download from HOT Export Tool instead
-
 # -------- Basic r5r query -----------
 
 #Set up r5r network
@@ -362,15 +359,7 @@ r5r_core <- setup_r5(data_path = "large_data", verbose=TRUE)
 #There are some "invalid turn restriction" errors but nothing too serious
 #Note that Heathrow stops are not reachable by foot, but are by PT
 #Some stops and centroids had to be manually moved to make them reachable via the street/PT network (see above)
-
-#Test!
-sample_origin <- workforce_centroids %>%
-  filter(id == 'E01000001')
-test_ttm <- travel_time_matrix(r5r_core,
-                               sample_origin,
-                               workforce_centroids,
-                               mode = c("WALK", "TRANSIT"),
-                               max_trip_duration = 5000L)
+#And obviously note limitations with no elevation data, lack of consideration of road micro-geographies, etc.
 
 #Use accessibility function
 #see how long each takes - then add to for loop?
@@ -379,9 +368,10 @@ test_ttm <- travel_time_matrix(r5r_core,
 
 # To do:
 # - GTFS calendar looks wrong! Quick check to see if I am being silly? Otherwise could TfL API help?
-# - New r5r_core with street network for larger area
+  #Waterloo and City looks good
+  #Check if 272 bus route only runs on Sat? If it also looks good (i.e. runs on all days) then make a note to ask Duncan
 # - Follow up re Overground
-# - When OSM is sorted, add to README which day it is from
+# - Walking between platforms at Barking??
 
 #Basic vis I will need:
 # - public transport network
