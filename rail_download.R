@@ -2,6 +2,8 @@ library(httr)
 library(UK2GTFS)
 library(jsonlite)
 library(gtfstools)
+options(java.parameters = "-Xmx2G")
+library(r5r)
 
 # ----- Download data ------
 
@@ -72,6 +74,7 @@ gtfs_nr <- atoc2gtfs(path_in = zipped_path, ncores = 3, silent=FALSE)
 #Need to export and re-import it to get it in GTFS object-type
 gtfs_write(gtfs_nr, folder = "large_data", name = "gtfs_nr_test")
 gtfs_nr <- read_gtfs("large_data/gtfs_nr_test.zip")
+file.remove("large_data/gtfs_nr_test.zip")
 
 #Filter for London Overground services only
 gtfs_nr$routes <- gtfs_nr$routes %>%
@@ -96,35 +99,125 @@ gtfs_nr$transfers <- NULL
 #Let's filter out rail replacement buses - for easier platform ID matching later
 gtfs_nr <- filter_by_route_type(gtfs_nr, route_type = 2, keep = TRUE)
 
+#Make trains stopping at Cannonbury ELL (CNNBELL) just stop at Cannonbury (CNNB) - it is the same station
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  mutate(stop_id = if_else(stop_id == 'CNNBELL', 'CNNB', stop_id))
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  filter(!stop_id == 'CNNBELL')
+
+#And Highbury & Islington ELL (HIGHBYE) to Highbury & Islington Rail Station (HIGHBYA)
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  mutate(stop_id = if_else(stop_id == 'HIGHBYE', 'HIGHBYA', stop_id))
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  filter(!stop_id == 'HIGHBYE')
+
+#And Willesden Junction Low Level (WLSDNJL) to Willesden Junction Rail Station (WLSDJHL)
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  mutate(stop_id = if_else(stop_id == 'WLSDNJL', 'WLSDJHL', stop_id))
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  filter(!stop_id == 'WLSDNJL')
+
+#And New Cross Gate ELL (NEWXGEL) to New Cross Gate (NEWXGTE)
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  mutate(stop_id = if_else(stop_id == 'NEWXGEL', 'NEWXGTE', stop_id))
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  filter(!stop_id == 'NEWXGEL')
+
+#Move Barking station onto street network
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  mutate(stop_lon = if_else(stop_id == 'BARKING', 0.081114, stop_lon),
+         stop_lat = if_else(stop_id == 'BARKING', 51.53926, stop_lat))
+
 #Check GTFS object
 output_path <- tempfile("validation_result")
 validator_path <- download_validator(tempdir())
-validate_gtfs(gtfs_nr, output_path, validator_path) #all looks good
+validate_gtfs(gtfs_nr, output_path, validator_path) #all looks good - note Clapham Junction is currently marked as two separate stations, when they should just be one
 
 summary(gtfs_nr)
 
-#Create a lookup table between TIPLOC and TfL codes
+gtfs_write(gtfs_nr, folder = "large_data", name = "gtfs_overground")
 
-#Load in CORPUS data
-corpus <- fromJSON("large_data/CORPUSExtract.json")$TIPLOCDATA%>%
-  clean_names()%>%
-  filter(tiploc %in% gtfs_nr$stops$stop_id)
-#There is nothing here to link with NAPTAN!
-#Open Rail Data Wiki says NAPTAN data contains CRS, but it doesn't
+#Next, we need to sort platform IDs
+#Then we want to merge the two GTFS files and create a new r5r_core
+
+# ------ Cleaning Stops and Matching IDs --------
+
+#In order to join to accessibility data, we need to create a separate stop for each platform
+#First, we need to match TIPLOC with NAPTAN codes
+
+# #First, let's load in the TfL detailed station list - for matching via name
+# tfl_stations <- read_csv("data/tfl_station_data_detailed/Stations.csv")%>%
+#   clean_names()%>%
+#   select(unique_id, name)%>%
+#   filter(!str_starts(unique_id, "940")) #remove any underground stops
+# 
+# #Match GTFS_NR stops via name
+# gtfs_nr_stops <- gtfs_nr$stops%>%
+#   mutate(name_cleaned = gtfs_nr_stops$stop_name <- sub(" Rail Station$", "", gtfs_nr_stops$stop_name))
+# gtfs_nr_stops <- gtfs_nr_stops %>%
+#   left_join(tfl_stations, by = c("name_cleaned" = "name"))
+# 
+# #Manually joining the rest
+# gtfs_nr_stops <- gtfs_nr_stops %>%
+#   mutate(unique_id = if_else(stop_id == 'CAMHTH', '910GCAMHTH', unique_id),
+#          unique_id = if_else(stop_id == 'EUSTON', 'HUBEUS', unique_id),
+#          unique_id = if_else(stop_id == 'LIVST', 'HUBLST', unique_id),
+#          unique_id = if_else(stop_id == 'NWCRELL', 'HUBNWX', unique_id),
+#          unique_id = if_else(stop_id == 'QPRK', 'HUBQPW', unique_id),
+#          unique_id = if_else(stop_id == 'RICHNLL', 'HUBRMD', unique_id),
+#          unique_id = if_else(stop_id == 'SHPDSB', 'HUBSPB', unique_id),
+#          unique_id = if_else(stop_id == 'STFD', 'HUBSRA', unique_id),
+#          unique_id = if_else(stop_id == 'STJMSST', '910GSTJMSST', unique_id),
+#          unique_id = if_else(stop_id == 'WLTHQRD', '910GWLTHQRD', unique_id),
+#          unique_id = if_else(stop_id == 'BARKRIV', '910GBKRVS', unique_id),
+#          unique_id = if_else(stop_id == 'WMBYDC', 'HUBWMB', unique_id))
+# 
+# #Battersea Park's ID can stay as it is - it won't affect the analysis as the Overground only stops here very early or late, and TfL lacks accessibility data for it
+# gtfs_nr_stops <- gtfs_nr_stops %>%
+#   mutate(unique_id = if_else(stop_id == 'BATRSPK', 'BATRSPK', unique_id))
+# 
+# #Clapham Junction as marked by 2 separate stations - a bit confusing!
+# #I will keep it this way for now: one is Mildmay, one is Windrush
+# 
+# #Now load in TfL platform data - this will help us with directions
+# platforms <- read_csv("data/tfl_station_data_detailed/Platforms.csv") %>%
+#   clean_names() %>%
+#   select(unique_id, station_unique_id, platform_number, cardinal_direction) %>%
+#   filter(grepl("overground", unique_id, ignore.case = TRUE))
+# 
+# #Check all platform IDs are now in the station list
+# gtfs_nr_stops_join <- gtfs_nr_stops %>%
+#   left_join(platforms, by = c("unique_id" = "station_unique_id"))
+# #All joined except for Battersea Park - looks good
+# rm(gtfs_nr_stops_join)
+# 
+# #Now we need to join stops to platforms
+# 
+# #Work out trip directions:
+# trip_directions <- gtfs_nr$stop_times %>%
+#   group_by(trip_id) %>%
+#   arrange(stop_sequence) %>%
+#   summarise(
+#     first_stop = first(stop_id),
+#     last_stop = last(stop_id))
+# trip_directions_unique_stations <- trip_directions %>%
+#   distinct(first_stop, last_stop)
+# #Next step:
+# # - Manually append trip directions?
+# # - But a problem is that the platform isn't always fixed
+
+#Immediate steps:
+# - Use this to work out which stops a route is actually on
+# - Merge GTFS files
+
+#Can we merge platforms to NAPTAN codes?
 
 # Issues
 # - Need to match TIPLOC and NaPTAN/TfL IDs
-  # - Looks like we can actually use NAPTAN data, if we do 4900 + TIPLOC
+  # - Looks like we can actually use NAPTAN data, if we do 4900 + TIPLOC (or 910 + TIPLOC for general, non-platform-specific)
     # - NAPTAN missing in RStudio has these followed by 0 for a generic entrance
     # - NAPTAN CSV has these with platform-specific numbers
 # - Only 1 "stop" per station, while the Traveline data seems to have one per platform
   # - Separating these into platform IDs
   # - Could I display individual routes, work out which direction it's going, and assign that as a stop type?
   # - Then use TfL API to assign actual platform name? Or do this manually - approx 240 times (2x 118 stops)
-# - 118 stations but only 113 according to TfL?
-
-# To sort
-# - If I do end up using this data, will need to add to README telling the user to add national rail username and password to .Renviron - and maybe pointing to zip command as that didn't work for me
-# - User will need to add CORPUS data, unzipped, to large_data (requires Network Rail log-in) - https://wiki.openraildata.com/index.php?title=Reference_Data#CORPUS:_Location_Reference_Data
-# - NR data for this analysis was downloaded 29/05/2025
-# - Change file path (not gtfs_nr_test!)
