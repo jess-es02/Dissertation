@@ -1,0 +1,84 @@
+first_stop,last_stop,first_stop_name,last_stop_name,cardinal_direction
+LIVST,CHESHNT,London Liverpool Street Rail Station,Cheshunt Rail Station,Northbound
+CHESHNT,LIVST,Cheshunt Rail Station,London Liverpool Street Rail Station,Southbound
+LIVST,CHINGFD,London Liverpool Street Rail Station,Chingford Rail Station,Northbound
+CHINGFD,LIVST,Chingford Rail Station,London Liverpool Street Rail Station,Southbound
+ENFLDTN,LIVST,Enfield Town Rail Station,London Liverpool Street Rail Station,Southbound
+LIVST,ENFLDTN,London Liverpool Street Rail Station,Enfield Town Rail Station,Northbound
+WATFJDC,EUSTON,Watford Junction Rail Station,London Euston Rail Station,Southbound
+WLSDJHL,EUSTON,Willesden Junction Rail Station,London Euston Rail Station,Southbound
+EUSTON,WATFJDC,London Euston Rail Station,Watford Junction Rail Station,Northbound
+EUSTON,WLSDJHL,London Euston Rail Station,Willesden Junction Rail Station,Northbound
+STFD,CMDNRD,Stratford (London) Rail Station,Camden Road Rail Station,Westbound
+BARKRIV,GOSPLOK,BARKING RIVERSIDE,Gospel Oak Rail Station,Westbound
+GOSPLOK,BARKRIV,Gospel Oak Rail Station,BARKING RIVERSIDE,Eastbound
+BARKRIV,UPRHLWY,BARKING RIVERSIDE,Upper Holloway Rail Station,Westbound
+CLPHMJC,STFD,Clapham Junction Rail Station,Stratford (London) Rail Station,Eastbound
+CLPHMJC,WLSDJHL,Clapham Junction Rail Station,Willesden Junction Rail Station,Eastbound
+RICHNLL,STFD,Richmond NLL Rail Station,Stratford (London) Rail Station,Eastbound
+ACTNCTL,STFD,Acton Central Rail Station,Stratford (London) Rail Station,Eastbound
+STFD,RICHNLL,Stratford (London) Rail Station,Richmond NLL Rail Station,Westbound
+STFD,WLSDJHL,Stratford (London) Rail Station,Willesden Junction Rail Station,Westbound
+WLSDJHL,RICHNLL,Willesden Junction Rail Station,Richmond NLL Rail Station,Westbound
+ACTNCTL,RICHNLL,Acton Central Rail Station,Richmond NLL Rail Station,Westbound
+RICHNLL,WLSDJHL,Richmond NLL Rail Station,Willesden Junction Rail Station,Eastbound
+CMDNRD,STFD,Camden Road Rail Station,Stratford (London) Rail Station,Eastbound
+WLSDJHL,STFD,Willesden Junction Rail Station,Stratford (London) Rail Station,Eastbound
+ROMFORD,UPMNSP6,Romford Rail Station,Upminster Rail Station,Eastbound
+UPMNSP6,ROMFORD,Upminster Rail Station,Romford Rail Station,Westbound
+STFD,CLPHMJC,Stratford (London) Rail Station,Clapham Junction Rail Station,Westbound
+WLSDJHL,CLPHMJC,Willesden Junction Rail Station,Clapham Junction Rail Station,Westbound
+SHPDSB,CLPHMJC,Shepherds Bush Rail Station,Clapham Junction Rail Station,Westbound
+NEWXGTE,CRYSTLP,New Cross Gate Rail Station,Crystal Palace Rail Station,Southbound
+DALS,CRYSTLP,Dalston Junction Rail Station,Crystal Palace Rail Station,Southbound
+HIGHBYA,CRYSTLP,Highbury & Islington Rail Station,Crystal Palace Rail Station,Southbound
+CRYSTLP,HIGHBYA,Crystal Palace Rail Station,Highbury & Islington Rail Station,Northbound
+CRYSTLP,DALS,Crystal Palace Rail Station,Dalston Junction Rail Station,Northbound
+CRYSTLP,NEWXGTE,Crystal Palace Rail Station,New Cross Gate Rail Station,Northbound
+NEWXGTE,WCROYDN,New Cross Gate Rail Station,West Croydon Rail Station,Southbound
+HIGHBYA,WCROYDN,Highbury & Islington Rail Station,West Croydon Rail Station,Southbound
+DALS,WCROYDN,Dalston Junction Rail Station,West Croydon Rail Station,Southbound
+WCROYDN,DALS,West Croydon Rail Station,Dalston Junction Rail Station,Northbound
+WCROYDN,HIGHBYA,West Croydon Rail Station,Highbury & Islington Rail Station,Northbound
+WCROYDN,NEWXGTE,West Croydon Rail Station,New Cross Gate Rail Station,Northbound
+NEWXGTE,DALS,New Cross Gate Rail Station,Dalston Junction Rail Station,Southbound
+DALS,NWCRELL,Dalston Junction Rail Station,New Cross ELL Rail Station,Northbound
+NWCRELL,HIGHBYA,New Cross ELL Rail Station,Highbury & Islington Rail Station,Northbound
+NWCRELL,DALS,New Cross ELL Rail Station,Dalston Junction Rail Station,Northbound
+HIGHBYA,CLPHMJC,Highbury & Islington Rail Station,Clapham Junction Rail Station,Southbound
+DALS,CLPHMJC,Dalston Junction Rail Station,Clapham Junction Rail Station,Southbound
+CLPHMJC,DALS,Clapham Junction Rail Station,Dalston Junction Rail Station,Northbound
+BATRSPK,DALS,Battersea Park Rail Station,Dalston Junction Rail Station,Northbound
+CLPHMJC,HIGHBYA,Clapham Junction Rail Station,Highbury & Islington Rail Station,Northbound
+HIGHBYA,NEWXGTE,Highbury & Islington Rail Station,New Cross Gate Rail Station,Southbound
+DALS,BATRSPK,Dalston Junction Rail Station,Battersea Park Rail Station,Southbound
+CMDNRD,WLSDJHL,Camden Road Rail Station,Willesden Junction Rail Station,Westbound
+WATFJDC,KLBRNHR,Watford Junction Rail Station,Kilburn High Road Rail Station,Southbound
+KLBRNHR,WATFJDC,Kilburn High Road Rail Station,Watford Junction Rail Station,Northbound
+BARKRIV,WDGRNPK,BARKING RIVERSIDE,Woodgrange Park Rail Station,Westbound
+WDGRNPK,BARKRIV,Woodgrange Park Rail Station,BARKING RIVERSIDE,Eastbound
+GOSPLOK,BARKING,Gospel Oak Rail Station,Barking Rail Station,Eastbound
+RICHNLL,CMDNRD,Richmond NLL Rail Station,Camden Road Rail Station,Eastbound
+CMDNRD,RICHNLL,Camden Road Rail Station,Richmond NLL Rail Station,Westbound
+STFD,GOSPLOK,Stratford (London) Rail Station,Gospel Oak Rail Station,Westbound
+NEWXGTE,HIGHBYA,New Cross Gate Rail Station,Highbury & Islington Rail Station,Northbound
+HIGHBYA,NWCRELL,Highbury & Islington Rail Station,New Cross ELL Rail Station,Southbound
+BATRSPK,HIGHBYA,Battersea Park Rail Station,Highbury & Islington Rail Station,Northbound
+HIGHBYA,BATRSPK,Highbury & Islington Rail Station,Battersea Park Rail Station,Southbound
+WATFJDC,WLSDJHL,Watford Junction Rail Station,Willesden Junction Rail Station,Southbound
+KLBRNHR,WLSDJHL,Kilburn High Road Rail Station,Willesden Junction Rail Station,Northbound
+BARKING,GOSPLOK,Barking Rail Station,Gospel Oak Rail Station,Westbound
+UPRHLWY,BARKING,Upper Holloway Rail Station,Barking Rail Station,Eastbound
+CLPHMJC,CMDNRD,Clapham Junction Rail Station,Camden Road Rail Station,Eastbound
+GOSPLOK,CMDNRD,Gospel Oak Rail Station,Camden Road Rail Station,Eastbound
+GOSPLOK,STFD,Gospel Oak Rail Station,Stratford (London) Rail Station,Eastbound
+WLSDJHL,CMDNRD,Willesden Junction Rail Station,Camden Road Rail Station,Eastbound
+RICHNLL,GOSPLOK,Richmond NLL Rail Station,Gospel Oak Rail Station,Eastbound
+GOSPLOK,CLPHMJC,Gospel Oak Rail Station,Clapham Junction Rail Station,Westbound
+SURREYQ,HIGHBYA,Surrey Quays Rail Station,Highbury & Islington Rail Station,Northbound
+WHHRTLA,ENFLDTN,White Hart Lane Rail Station,Enfield Town Rail Station,Northbound
+CLPHMJC,SHPDSB,Clapham Junction Rail Station,Shepherds Bush Rail Station,Eastbound
+STFD,QPRK,Stratford (London) Rail Station,Queens Park (London) Rail Station,Westbound
+QPRK,STFD,Queens Park (London) Rail Station,Stratford (London) Rail Station,Eastbound
+GOSPLOK,RICHNLL,Gospel Oak Rail Station,Richmond NLL Rail Station,Westbound
+BARKRIV,WLSDJHL,BARKING RIVERSIDE,Willesden Junction Rail Station,Eastbound
