@@ -194,10 +194,18 @@ gtfs_nr_stops_join <- gtfs_nr_stops %>%
 #All joined except for Battersea Park - looks good
 rm(platforms)
 
-#Now we need to join stops to platforms
+#Cleaning IDs for easier joining
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  rename("tfl_id" = unique_id,
+         "platform_id" = unique_id.y,
+         "nr_id" = stop_id)%>%
+  select(nr_id, tfl_id, stop_name, stop_lon, stop_lat, platform_id, platform_number, cardinal_direction)
 
-#Load in TFL stops data
-tfl_stops <- read_csv("data/tfl_station_data/stops.txt")
+#Update Battersea Park platform, as we will probably be joining on this field
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  mutate(platform_id = if_else(tfl_id == 'BATRSPK', 'BATRSPK', platform_id))
+
+#Now we need to join stops to platforms - we will use trip directions for this
 
 #Work out trip directions:
 trip_directions <- gtfs_nr$stop_times %>%
@@ -221,11 +229,105 @@ trip_directions <- read_csv("data/trip_directions_unique_stations.csv")%>%
   clean_names()%>%
   select(-first_stop_name, -last_stop_name)
 
-#Next step:
-# - Manually append trip directions?
-  # - Before joining, check for stops which have multiple platforms in the same direction
-# - But a problem is that the platform isn't always fixed
-  # - Just append mode? Or number 1 for a big station e.g. Liverpool Street
+#Retrospectively change some directions because it looks like TfL hasn't updated their timetable info
+#XXX
+
+#Join to trip information
+trip_id_lookup <- gtfs_nr$stop_times %>%
+  group_by(trip_id) %>%
+  arrange(stop_sequence) %>%
+  summarise(first_stop = first(stop_id),
+            last_stop = last(stop_id))
+trip_id_lookup <- trip_id_lookup %>%
+  left_join(trip_directions, by = c("first_stop", "last_stop"))
+
+#Before we join to stop_times, we need to check whether some stations have multiple overground platforms in the same direction
+direction_test <- gtfs_nr_stops_join %>%
+  group_by(tfl_id, cardinal_direction) %>%
+  summarise(platform_count = n_distinct(platform_id), .groups = "drop") %>%
+  filter(platform_count > 1)
+
+#At some stations, the same route travels from multiple platforms - we will have to make simplifications
+
+#Keep only the first Liverpool Street Platform - it looks like accessibility is the same for each
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  group_by(tfl_id) %>%
+  filter(!(tfl_id == "HUBLST" & row_number() > 1)) %>%
+  ungroup()
+
+#Do the same for Euston
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  group_by(tfl_id) %>%
+  filter(!(tfl_id == "HUBWFJ" & row_number() > 1)) %>%
+  ungroup()
+
+#Chingford - looks like most services are from Platform 2
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  group_by(tfl_id) %>%
+  filter(!(tfl_id == "910GCHINGFD" & row_number() != 2)) %>%
+  ungroup()
+
+#Dalston Junction - looks like all Southbound platforms are used equally frequently, let's take the first
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  filter(!(tfl_id == "910GDALS" & platform_number %in% c(3, 4)))
+
+#Richmond - looks like platform 5 is the most frequent for Overground
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  filter(!(tfl_id == "HUBRMD" & platform_number %in% c(3, 4)))
+
+#Barking Riverside - looks like both platforms are used equally, will just pick 1
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  filter(!(tfl_id == "910GBKRVS" & platform_number == 2))
+
+#Barking - looks like platform 8 is more used for Westbound services than 1
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  filter(!(tfl_id == "HUBBKG" & platform_number == 1))
+
+#Crystal Palace - departures mostly from platform 3
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  filter(!(tfl_id == "HUBCYP" & platform_number == 5))
+
+#Euston - departures mostly from platform 9
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  filter(!(tfl_id == "HUBEUS" & platform_number == 10))
+
+#Norwood Junction - departures mostly from 1 and 5
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  filter(!(tfl_id == "HUBNWD" & platform_number %in% c(3, 6)))
+
+#Note there are still some stops with multiple Overground routes in the same cardinal direction
+#Let's join anyway and manually fix those later
+
+#Append direction onto stop times
+#Adding logic for stops at the start/end of line - reverse cardinal direction
+directions <- c("Northbound"="Southbound", "Southbound"="Northbound", "Eastbound"="Westbound", "Westbound"="Eastbound")
+
+gtfs_nr_stop_times <- gtfs_nr$stop_times
+gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
+  left_join(trip_id_lookup, by=c("trip_id"))%>%
+  mutate(cardinal_direction = if_else(drop_off_type == 1 | pickup_type == 1, #invert platform at the start/end of line
+                              directions[cardinal_direction],
+                              cardinal_direction))%>%
+  left_join(gtfs_nr_stops_join, by = c("stop_id" = "nr_id", "cardinal_direction"))
+#Update logic for Battersea Park, which was excluded from platform dataset
+gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
+  mutate(platform_id = if_else(stop_id == 'BATRSPK', 'BATRSPK', platform_id))
+
+#Things to sort:
+#1) Many join - artificially remove duplicate direction platforms before reintroducing?
+  # Go to line 233
+#2) Some stations in wrong directions?
+#3) Manually sort duplicate direction platforms?
+
+view(gtfs_nr_stop_times %>% filter(stop_id == 'BATRSPK'))
+#Stops with multiple Overground routes in the same cardinal direction:
+# - Gospel Oak 910GGOSPLOK
+# - Hackney Downs is not on multiple lines, but will require a bit of careful consideration as it's a key interchange within the Weaver line 910GHAKNYNM
+# - Clapham Junction HUBCLJ
+# - Highbury and Islington HUBHHY
+# - Stratford - same line, but some to Richmond and some to Clapham Junction HUBSRA
+# - Willesden Junction HUBWIJ
+
 
 #Clean workspace when done
 
@@ -233,3 +335,6 @@ trip_directions <- read_csv("data/trip_directions_unique_stations.csv")%>%
 # - Create new gtfs_nr$stops, with a new stop which can link to TfL platform info
 # - Turn London GTFS data into TfL platforms (should be easier!)
 # - Merge GTFS files, create new r5r_core
+
+#Load in TFL stops data
+#tfl_stops <- read_csv("data/tfl_station_data/stops.txt")
