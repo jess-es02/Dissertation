@@ -42,7 +42,7 @@ WCROYDN,DALS,West Croydon Rail Station,Dalston Junction Rail Station,Northbound
 WCROYDN,HIGHBYA,West Croydon Rail Station,Highbury & Islington Rail Station,Northbound
 WCROYDN,NEWXGTE,West Croydon Rail Station,New Cross Gate Rail Station,Northbound
 NEWXGTE,DALS,New Cross Gate Rail Station,Dalston Junction Rail Station,Southbound
-DALS,NWCRELL,Dalston Junction Rail Station,New Cross ELL Rail Station,Northbound
+DALS,NWCRELL,Dalston Junction Rail Station,New Cross ELL Rail Station,Southbound
 NWCRELL,HIGHBYA,New Cross ELL Rail Station,Highbury & Islington Rail Station,Northbound
 NWCRELL,DALS,New Cross ELL Rail Station,Dalston Junction Rail Station,Northbound
 HIGHBYA,CLPHMJC,Highbury & Islington Rail Station,Clapham Junction Rail Station,Southbound
