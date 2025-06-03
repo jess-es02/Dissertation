@@ -1,0 +1,38 @@
+first_stop,last_stop,first_stop_name,last_stop_name,cardinal direction
+GIDEAPK,LIVST,Gidea Park Rail Station,London Liverpool Street Rail Station,Eastbound
+LIVST,GIDEAPK,London Liverpool Street Rail Station,Gidea Park Rail Station,Westbound
+LIVST,SHENFLD,London Liverpool Street Rail Station,Shenfield Rail Station,Eastbound
+SHENFLD,LIVST,Shenfield Rail Station,London Liverpool Street Rail Station,Westbound
+RDNGSTN,PADTON,Reading Rail Station,London Paddington Rail Station,Eastbound
+MDNHEAD,PADTON,Maidenhead Rail Station,London Paddington Rail Station,Westbound
+HTRWTM4,PADTON,Heathrow Terminal 4 Rail Station,London Paddington Rail Station,Westbound
+HTRWTM5,PADTON,Heathrow Terminal 5 Rail Station,London Paddington Rail Station,Westbound
+ABWDXR,HTRWTM4,ABBEY WOOD (CROSSRAIL),Heathrow Terminal 4 Rail Station,Eastbound
+PADTON,HTRWTM4,London Paddington Rail Station,Heathrow Terminal 4 Rail Station,Westbound
+ABWDXR,HAYESAH,ABBEY WOOD (CROSSRAIL),Hayes & Harlington Rail Station,Westbound
+STFD,HTRWTM4,Stratford (London) Rail Station,Heathrow Terminal 4 Rail Station,Westbound
+GIDEAPK,HTRWTM4,Gidea Park Rail Station,Heathrow Terminal 4 Rail Station,Westbound
+ABWDXR,MDNHEAD,ABBEY WOOD (CROSSRAIL),Maidenhead Rail Station,Westbound
+ABWDXR,RDNGSTN,ABBEY WOOD (CROSSRAIL),Reading Rail Station,Westbound
+PADTON,RDNGSTN,London Paddington Rail Station,Reading Rail Station,Westbound
+SHENFLD,HTRWTM5,Shenfield Rail Station,Heathrow Terminal 5 Rail Station,Westbound
+PADTON,HTRWTM5,London Paddington Rail Station,Heathrow Terminal 5 Rail Station,Westbound
+ABWDXR,HTRWTM5,ABBEY WOOD (CROSSRAIL),Heathrow Terminal 5 Rail Station,Westbound
+RDNGSTN,ABWDXR,Reading Rail Station,ABBEY WOOD (CROSSRAIL),Eastbound
+HTRWTM4,ABWDXR,Heathrow Terminal 4 Rail Station,ABBEY WOOD (CROSSRAIL),Eastbound
+MDNHEAD,ABWDXR,Maidenhead Rail Station,ABBEY WOOD (CROSSRAIL),Eastbound
+HTRWTM5,ABWDXR,Heathrow Terminal 5 Rail Station,ABBEY WOOD (CROSSRAIL),Eastbound
+PADTON,ABWDXR,PADDINGTON CROSSRAIL,ABBEY WOOD (CROSSRAIL),Eastbound
+PADTON,SHENFLD,PADDINGTON CROSSRAIL,Shenfield Rail Station,Eastbound
+HTRWTM5,SHENFLD,Heathrow Terminal 5 Rail Station,Shenfield Rail Station,Eastbound
+HTRWTM4,SHENFLD,Heathrow Terminal 4 Rail Station,Shenfield Rail Station,Eastbound
+SHENFLD,PADTON,Shenfield Rail Station,PADDINGTON CROSSRAIL,Westbound
+ABWDXR,PADTON,ABBEY WOOD (CROSSRAIL),PADDINGTON CROSSRAIL,Westbound
+GIDEAPK,PADTON,Gidea Park Rail Station,PADDINGTON CROSSRAIL,Westbound
+PADTON,WCHAPXR,PADDINGTON CROSSRAIL,WHITECHAPEL CROSSRAIL,Eastbound
+SHENFLD,HTRWTM4,Shenfield Rail Station,Heathrow Terminal 4 Rail Station,Westbound
+STFD,HTRWTM5,Stratford (London) Rail Station,Heathrow Terminal 5 Rail Station,Westbound
+PADTON,GIDEAPK,PADDINGTON CROSSRAIL,Gidea Park Rail Station,Eastbound
+PADTON,HAYESAH,London Paddington Rail Station,Hayes & Harlington Rail Station,Westbound
+PADTON,MDNHEAD,London Paddington Rail Station,Maidenhead Rail Station,Westbound
+SVNKNGS,PADTON,Seven Kings Rail Station,PADDINGTON CROSSRAIL,Westbound

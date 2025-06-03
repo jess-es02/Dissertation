@@ -1,9 +1,9 @@
-#Downloading and processing London Overground data
+#Downloading and processing London Overground and Elizabeth Line data
 
 #In this file, we:
   # - Download ATOC data from the National Rail API
-  # - Filter for Overground services and convert to GTFS format
-  # - Process the station IDs using the TfL API and topological data to obtain a separate ID for each Overground platform
+  # - Filter for Overground/Elizabeth Line services and convert to GTFS format
+  # - Process the station IDs using the TfL API and topological data to obtain a separate ID for each platform
 
 #This data wrangling was a messy process and certain assumptions had to be made - please see the comments below for more details
 
@@ -85,7 +85,6 @@ gtfs_nr <- atoc2gtfs(path_in = zipped_path, ncores = 3, silent=FALSE)
 #Need to export and re-import it to get it in GTFS object-type
 gtfs_write(gtfs_nr, folder = "large_data", name = "gtfs_nr_test")
 gtfs_nr <- read_gtfs("large_data/gtfs_nr_test.zip")
-file.remove("large_data/gtfs_nr_test.zip")
 
 #Filter for London Overground services only
 gtfs_nr$routes <- gtfs_nr$routes %>%
@@ -511,3 +510,183 @@ summary(gtfs_nr)
 gtfs_write(gtfs_nr, folder = "large_data", name = "gtfs_overground")
 
 rm(check_nulls, direction_test, gtfs_nr_stops, problematic_trips, temp_gtfs_nr_stops_join, trip_directions, trip_id_lookup, directions, more_problematic_ids, platform_codes, problematic_trip_ids, output_path, validator_path, gtfs_nr_stops_join, gtfs_nr_stop_times, final_gtfs_nr_stops, final_gtfs_nr_stop_times, tfl_stations)
+
+# ----- Processing Lizzie Line -----
+gtfs_nr <- read_gtfs("large_data/gtfs_nr_test.zip")
+
+#Filter for Lizzie services only
+gtfs_nr$routes <- gtfs_nr$routes %>%
+  filter(agency_id == 'XR') #routes
+#Now ensure compatibility with other gtfs files
+gtfs_nr$trips <- gtfs_nr$trips %>%
+  filter(route_id %in% gtfs_nr$routes$route_id) #trips
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  filter(trip_id %in% gtfs_nr$trips$trip_id) #stop_times
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  filter(stop_id %in% gtfs_nr$stop_times$stop_id) #stops
+gtfs_nr$agency <- gtfs_nr$agency %>%
+  filter(agency_id == 'XR') #agency
+gtfs_nr$calendar <- gtfs_nr$calendar %>%
+  filter(service_id %in% gtfs_nr$trips$service_id) #calendar
+gtfs_nr$calendar_dates <- gtfs_nr$calendar_dates %>%
+  filter(service_id %in% gtfs_nr$trips$service_id) #calendar_dates
+
+#Removing transfers.txt, as we don't have this in the Traveline data
+gtfs_nr$transfers <- NULL
+
+#Matching IDs - a rehash of the above code
+#Loading the TfL detailed station list for matching via name
+tfl_stations <- read_csv("data/tfl_station_data_detailed/Stations.csv")%>%
+  clean_names()%>%
+  select(unique_id, name)
+
+#Match GTFS_NR stops via name
+gtfs_nr_stops <- gtfs_nr$stops
+gtfs_nr_stops <- gtfs_nr_stops %>%
+  mutate(name_cleaned = gtfs_nr_stops$stop_name <- sub(" Rail Station$", "", gtfs_nr_stops$stop_name),
+         name_cleaned = str_to_title(name_cleaned))
+gtfs_nr_stops <- gtfs_nr_stops %>%
+  left_join(tfl_stations, by = c("name_cleaned" = "name"))
+
+#Manually adding the rest
+gtfs_nr_stops <- gtfs_nr_stops %>%
+  mutate(unique_id = if_else(stop_id == 'BNHAM', '910GBNHAM', unique_id),
+         unique_id = if_else(stop_id == 'HTRWAPT', 'HUBH13', unique_id),
+         unique_id = if_else(stop_id == 'LIVST', 'HUBLST', unique_id),
+         unique_id = if_else(stop_id == 'LANGLEY', '910GLANGLEY', unique_id),
+         unique_id = if_else(stop_id == 'PADTON', 'HUBPAD', unique_id),
+         unique_id = if_else(stop_id == 'STFD', 'HUBSRA', unique_id),
+         unique_id = if_else(stop_id == 'ABWDXR', 'HUBABW', unique_id),
+         unique_id = if_else(stop_id == 'CUSTMHS', 'HUBCUS', unique_id),
+         unique_id = if_else(stop_id == 'FRNDXR', 'HUBZFD', unique_id),
+         unique_id = if_else(stop_id == 'PADTLL', 'HUBPAD', unique_id),
+         unique_id = if_else(stop_id == 'WCHAPXR', 'HUBZWL', unique_id))
+
+#Combine Paddington and Paddington Crossrail stations
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  mutate(stop_id = if_else(stop_id == 'PADTLL', 'PADTON', stop_id))
+gtfs_nr_stops <- gtfs_nr_stops %>%
+  filter(!stop_id == 'PADTLL')
+
+#Combine Liverpool Street and Liverpool Street Crossrail stations
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  mutate(stop_id = if_else(stop_id == 'LIVSTLL', 'LIVST', stop_id))
+gtfs_nr_stops <- gtfs_nr_stops %>%
+  filter(!stop_id == 'LIVSTLL')
+
+#Now load in TfL platform data - this will help us with directions
+platforms <- read_csv("data/tfl_station_data_detailed/Platforms.csv") %>%
+  clean_names() %>%
+  select(unique_id, station_unique_id, platform_number, cardinal_direction) %>%
+  filter(grepl("elizabeth", unique_id, ignore.case = TRUE))
+
+#Check all platform IDs are now in the station list
+gtfs_nr_stops_join <- gtfs_nr_stops %>%
+  left_join(platforms, by = c("unique_id" = "station_unique_id"))
+rm(platforms)
+
+#Cleaning IDs for easier joining
+gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  rename("tfl_id" = unique_id,
+         "platform_id" = unique_id.y,
+         "nr_id" = stop_id)%>%
+  select(nr_id, tfl_id, stop_name, stop_lon, stop_lat, platform_id, platform_number, cardinal_direction)
+
+#Work out trip directions:
+trip_directions <- gtfs_nr$stop_times %>%
+  group_by(trip_id) %>%
+  arrange(stop_sequence) %>%
+  summarise(
+    first_stop = first(stop_id),
+    last_stop = last(stop_id))
+trip_directions_unique_stations <- trip_directions %>%
+  distinct(first_stop, last_stop)%>%
+  left_join(gtfs_nr_stops, by = c("first_stop" = "stop_id"))%>%
+  left_join(gtfs_nr_stops, by = c("last_stop" = "stop_id"))%>%
+  select(first_stop, last_stop, stop_name.x, stop_name.y)%>%
+  rename("first_stop_name" = stop_name.x,
+         "last_stop_name" = stop_name.y)
+#write.csv(trip_directions_unique_stations, "data/lizzie_trip_directions_unique_stations.csv", row.names = FALSE)
+rm(trip_directions, trip_directions_unique_stations)
+
+#I manually added these in Excel (PADTLL replaced with PADTON)
+trip_directions <- read_csv("data/lizzie_trip_directions_unique_stations.csv")%>%
+  clean_names()%>%
+  select(-first_stop_name, -last_stop_name)
+
+#Before we join directions to stop_times, we need to check whether some stations have multiple overground platforms in the same direction
+direction_test <- gtfs_nr_stops_join %>%
+  group_by(tfl_id, cardinal_direction) %>%
+  summarise(platform_count = n_distinct(platform_id), .groups = "drop") %>%
+  filter(platform_count > 1)
+
+#It looks like there are lots of duplicates in the platform list (ascertained by comparing to live TfL API)
+#Manually removing these
+platforms_to_remove <- c("910GBRTWOOD-Plat01-WB-elizabeth", "910GBRTWOOD-Plat02-EB-elizabeth",
+                         "910GCHDWLHT-Plat01-WB-elizabeth", "910GCHDWLHT-Plat02-EB-elizabeth",
+                         "910GFRSTGT-Plat03-WB-elizabeth", "910GFRSTGT-Plat04-EB-elizabeth",
+                         "910GGIDEAPK-Plat01-WB-elizabeth", "910GGIDEAPK-Plat02-EB-elizabeth",
+                         "910GGODMAYS-Plat01-WB-elizabeth", "910GGODMAYS-Plat02-EB-elizabeth",
+                         "910GHAYESAH-Plat01-WB-elizabeth", "910GHAYESAH-Plat02-EB-elizabeth", "910GHAYESAH-Plat05-EB-elizabeth",
+                         "910GHRLDWOD-Plat01-WB-elizabeth", "910GHRLDWOD-Plat02-EB-elizabeth",
+                         "910GILFORD-Plat01-WB-elizabeth", "910GILFORD-Plat02-EB-elizabeth",
+                         "910GIVER-Plat01-WB-elizabeth", "910GIVER-Plat02-EB-elizabeth",
+                         "910GLANGLEY-Plat01-WB-elizabeth", "910GLANGLEY-Plat02-EB-elizabeth",
+                         "910GMANRPK-Plat03-WB-elizabeth", "910GMANRPK-Plat04-EB-elizabeth",
+                         "910GMDNHEAD-Plat01-WB-elizabeth", "910GMDNHEAD-Plat02-EB-elizabeth", "910GMDNHEAD-Plat05-EB-elizabeth",
+                         "910GMRYLAND-Plat03-WB-elizabeth", "910GMRYLAND-Plat04-EB-elizabeth",
+                         "910GSLOUGH-Plat02-WB-elizabeth", "910GSLOUGH-Plat03-EB-elizabeth",
+                         "910GSTHALL-Plat01-WB-elizabeth", "910GSTHALL-Plat02-EB-elizabeth",
+                         "910GSVNKNGS-Plat01-WB-elizabeth", "910GSVNKNGS-Plat02-EB-elizabeth",
+                         "910GTAPLOW-Plat01-WB-elizabeth", "910GTAPLOW-Plat02-EB-elizabeth",
+                         "910GTWYFORD-Plat01-WB-elizabeth", "910GTWYFORD-Plat02-EB-elizabeth",
+                         "910GWDRYTON-Plat01-WB-elizabeth", "910GWDRYTON-Plat02-EB-elizabeth", "910GWDRYTON-Plat05-EB-elizabeth",
+                         "HUBEAL-Plat01-WB-elizabeth", "HUBEAL-Plat02-EB-elizabeth",
+                         "HUBHX4-Plat02-WB-elizabeth", "HUBHX5-Plat03-EB-elizabeth",
+                         "HUBLST-Plat15-EB-elizabeth", "HUBLST-Plat16-EB-elizabeth", "HUBLST-Plat17-EB-elizabeth",
+                         "HUBPAD-Plat11-WB-elizabeth", "HUBPAD-Plat12-WB-elizabeth")
+#Note Heathrow Terminal 4 are all in the same direction - randomly kept platform 1
+gtfs_nr_stops_join <- gtfs_nr_stops_join%>%
+  filter(! platform_id %in% platforms_to_remove)
+
+#There are two terminus stops with duplicate directions which we'll have to fix later: Shenfield and Abbey Wood
+#Rerun duplicate test
+direction_test <- gtfs_nr_stops_join %>%
+  group_by(tfl_id, cardinal_direction) %>%
+  summarise(platform_count = n_distinct(platform_id), .groups = "drop") %>%
+  filter(platform_count > 1)
+#Remove the first instance from the platform list
+temp_gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
+  left_join(direction_test, by = c("tfl_id", "cardinal_direction"))%>%
+  group_by(tfl_id, cardinal_direction)%>%
+  filter(is.na(platform_count) | row_number() != 1) %>%
+  ungroup()%>%
+  select(-platform_count)
+
+#Append direction onto stop times
+#First, join directions to trip information
+trip_id_lookup <- gtfs_nr$stop_times %>%
+  group_by(trip_id) %>%
+  arrange(stop_sequence) %>%
+  summarise(first_stop = first(stop_id),
+            last_stop = last(stop_id))
+trip_id_lookup <- trip_id_lookup %>%
+  left_join(trip_directions, by = c("first_stop", "last_stop"))
+#Adding dictionary logic for stops at the start/end of line - reverse cardinal direction
+directions <- c("Northbound"="Southbound", "Southbound"="Northbound", "Eastbound"="Westbound", "Westbound"="Eastbound")
+#Joining
+gtfs_nr_stop_times <- gtfs_nr$stop_times
+gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
+  left_join(trip_id_lookup, by=c("trip_id"))%>%
+  mutate(cardinal_direction = if_else(pickup_type == 1, #invert platform at the end of line - so it "stops" in the same place it starts
+                                      directions[cardinal_direction],
+                                      cardinal_direction))%>%
+  left_join(temp_gtfs_nr_stops_join, by = c("stop_id" = "nr_id", "cardinal_direction"))
+
+#Fix nulls
+
+#Manually fix stations with multiple platforms in the same direction
+#Shenfield to be sorted manually: platform 5 to Heathrow, 6 to Paddington
+#Abbey Wood HUBABW
+
+file.remove("large_data/gtfs_nr_test.zip")
