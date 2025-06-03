@@ -1,4 +1,14 @@
+#Downloading and processing London Overground data
+
+#In this file, we:
+  # - Download ATOC data from the National Rail API
+  # - Filter for Overground services and convert to GTFS format
+  # - Process the station IDs using the TfL API and topological data to obtain a separate ID for each Overground platform
+
+#This data wrangling was a messy process and certain assumptions had to be made - please see the comments below for more details
+
 library(tidyverse)
+library(janitor)
 library(httr)
 library(UK2GTFS)
 library(jsonlite)
@@ -6,145 +16,134 @@ library(gtfstools)
 options(java.parameters = "-Xmx2G")
 library(r5r)
 
-# # ----- Download data ------
-# 
-# #Get National Rail API details
-# username <- Sys.getenv("national_rail_username")
-# password <- Sys.getenv("national_rail_password")
-# 
-# #Authentication request
-# response <- POST(
-#   url = "https://opendata.nationalrail.co.uk/authenticate",
-#   body = list(
-#     username = username,
-#     password = password),
-#   encode = "form")
-# token <- content(response, as = "parsed", type = "application/json")$token
-# 
-# #Download timetable data, using token
-# timetable <- GET(
-#   url = "https://opendata.nationalrail.co.uk/api/staticfeeds/3.0/timetable",
-#   add_headers(`X-Auth-Token` = token),
-#   accept("application/zip"))
-# 
-# #Save the data locally
-# writeBin(content(timetable, "raw"), "large_data/national_rail_atoc.zip")
-# unzipped_path <- "large_data/atoc_extracted"
-# unzip("large_data/national_rail_atoc.zip", exdir = unzipped_path)
-# 
-# # ------ Convert to GTFS format --------
-# 
-# #Reformatting for compatibility with UK2GTFS package
-#   #1) Making file extensions lowercase
-#   #2) Removing metadata (starting with '/!!') at the start of certain file types
-# #Note ChatGPT was used heavily here
-# 
-# target_extensions <- c("dat", "flf", "msn", "set")  
-# files <- list.files(unzipped_path, full.names = TRUE)
-# 
-# for (file in files) {
-#   #Convert file extension to lowercase
-#   ext <- tools::file_ext(file)
-#   new_ext <- tolower(ext)
-#   
-#   #Rename file if extension was changed  
-#   if (ext != new_ext) {
-#     new_name <- sub(paste0("\\.", ext, "$"), paste0(".", new_ext), file)
-#     file.rename(file, new_name)
-#     file <- new_name
-#     ext <- new_ext
-#   }
-#   
-#   #Remove metadata from the start of certain file types
-#   if (ext %in% target_extensions) {
-#     lines <- readLines(file, warn = FALSE)
-#     cleaned <- lines[!grepl("^/!!", lines)]
-#     writeLines(cleaned, file)
-#   }
-# }
-# 
-# #Rezip file
-# zipped_path <- "large_data/national_rail_atoc.zip"
-# file.remove(zipped_path)
-# files_to_zip <- list.files(unzipped_path, full.names = TRUE)
-# zip(zipfile = zipped_path, files = files_to_zip, flags = "-j")
-# 
-# #Now we can convert to GTFS
-# gtfs_nr <- atoc2gtfs(path_in = zipped_path, ncores = 3, silent=FALSE)
-# 
-# #Need to export and re-import it to get it in GTFS object-type
-# gtfs_write(gtfs_nr, folder = "large_data", name = "gtfs_nr_test")
-# gtfs_nr <- read_gtfs("large_data/gtfs_nr_test.zip")
-# file.remove("large_data/gtfs_nr_test.zip")
-# 
-# #Filter for London Overground services only
-# gtfs_nr$routes <- gtfs_nr$routes %>%
-#   filter(agency_id == 'LO') #routes
-# #Now ensure compatibility with other gtfs files
-# gtfs_nr$trips <- gtfs_nr$trips %>%
-#   filter(route_id %in% gtfs_nr$routes$route_id) #trips
-# gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
-#   filter(trip_id %in% gtfs_nr$trips$trip_id) #stop_times
-# gtfs_nr$stops <- gtfs_nr$stops %>%
-#   filter(stop_id %in% gtfs_nr$stop_times$stop_id) #stops
-# gtfs_nr$agency <- gtfs_nr$agency %>%
-#   filter(agency_id == 'LO') #agency
-# gtfs_nr$calendar <- gtfs_nr$calendar %>%
-#   filter(service_id %in% gtfs_nr$trips$service_id) #calendar
-# gtfs_nr$calendar_dates <- gtfs_nr$calendar_dates %>%
-#   filter(service_id %in% gtfs_nr$trips$service_id) #calendar_dates
-# 
-# #Removing transfers.txt, as we don't have this in the Traveline data
-# gtfs_nr$transfers <- NULL
-# 
-# #Let's filter out rail replacement buses - for easier platform ID matching later
-# gtfs_nr <- filter_by_route_type(gtfs_nr, route_type = 2, keep = TRUE)
-# 
-# #Make trains stopping at Cannonbury ELL (CNNBELL) just stop at Cannonbury (CNNB) - it is the same station
-# gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
-#   mutate(stop_id = if_else(stop_id == 'CNNBELL', 'CNNB', stop_id))
-# gtfs_nr$stops <- gtfs_nr$stops %>%
-#   filter(!stop_id == 'CNNBELL')
-# 
-# #And Highbury & Islington ELL (HIGHBYE) to Highbury & Islington Rail Station (HIGHBYA)
-# gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
-#   mutate(stop_id = if_else(stop_id == 'HIGHBYE', 'HIGHBYA', stop_id))
-# gtfs_nr$stops <- gtfs_nr$stops %>%
-#   filter(!stop_id == 'HIGHBYE')
-# 
-# #And Willesden Junction Low Level (WLSDNJL) to Willesden Junction Rail Station (WLSDJHL)
-# gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
-#   mutate(stop_id = if_else(stop_id == 'WLSDNJL', 'WLSDJHL', stop_id))
-# gtfs_nr$stops <- gtfs_nr$stops %>%
-#   filter(!stop_id == 'WLSDNJL')
-# 
-# #And New Cross Gate ELL (NEWXGEL) to New Cross Gate (NEWXGTE)
-# gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
-#   mutate(stop_id = if_else(stop_id == 'NEWXGEL', 'NEWXGTE', stop_id))
-# gtfs_nr$stops <- gtfs_nr$stops %>%
-#   filter(!stop_id == 'NEWXGEL')
-# 
-# #Combine both Clapham Junctions (CLPHMJ1, CLPHMJC)
-# gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
-#   mutate(stop_id = if_else(stop_id == 'CLPHMJ1', 'CLPHMJC', stop_id))
-# gtfs_nr$stops <- gtfs_nr$stops %>%
-#   filter(!stop_id == 'CLPHMJ1')
-# 
-# #Move Barking station onto street network
-# gtfs_nr$stops <- gtfs_nr$stops %>%
-#   mutate(stop_lon = if_else(stop_id == 'BARKING', 0.081114, stop_lon),
-#          stop_lat = if_else(stop_id == 'BARKING', 51.53926, stop_lat))
-# 
-# #Check GTFS object
-# output_path <- tempfile("validation_result")
-# validator_path <- download_validator(tempdir())
-# validate_gtfs(gtfs_nr, output_path, validator_path) #all looks good - note Clapham Junction is currently marked as two separate stations, when they should just be one
-# 
-# summary(gtfs_nr)
-# 
-# gtfs_write(gtfs_nr, folder = "large_data", name = "gtfs_overground")
+# ----- Download data ------
 
-gtfs_nr <- read_gtfs("large_data/gtfs_overground.zip")
+#Get National Rail API details
+username <- Sys.getenv("national_rail_username")
+password <- Sys.getenv("national_rail_password")
+
+#Authentication request
+response <- POST(
+  url = "https://opendata.nationalrail.co.uk/authenticate",
+  body = list(
+    username = username,
+    password = password),
+  encode = "form")
+token <- content(response, as = "parsed", type = "application/json")$token
+
+#Download timetable data, using token
+timetable <- GET(
+  url = "https://opendata.nationalrail.co.uk/api/staticfeeds/3.0/timetable",
+  add_headers(`X-Auth-Token` = token),
+  accept("application/zip"))
+
+#Save the data locally
+writeBin(content(timetable, "raw"), "large_data/national_rail_atoc.zip")
+unzipped_path <- "large_data/atoc_extracted"
+unzip("large_data/national_rail_atoc.zip", exdir = unzipped_path)
+
+# ------ Convert to GTFS format --------
+
+#Reformatting for compatibility with UK2GTFS package
+  #1) Making file extensions lowercase
+  #2) Removing metadata (starting with '/!!') at the start of certain file types
+#Note ChatGPT was used heavily here
+
+target_extensions <- c("dat", "flf", "msn", "set")
+files <- list.files(unzipped_path, full.names = TRUE)
+
+for (file in files) {
+  #Convert file extension to lowercase
+  ext <- tools::file_ext(file)
+  new_ext <- tolower(ext)
+
+  #Rename file if extension was changed
+  if (ext != new_ext) {
+    new_name <- sub(paste0("\\.", ext, "$"), paste0(".", new_ext), file)
+    file.rename(file, new_name)
+    file <- new_name
+    ext <- new_ext
+  }
+
+  #Remove metadata from the start of certain file types
+  if (ext %in% target_extensions) {
+    lines <- readLines(file, warn = FALSE)
+    cleaned <- lines[!grepl("^/!!", lines)]
+    writeLines(cleaned, file)
+  }
+}
+
+#Rezip file
+zipped_path <- "large_data/national_rail_atoc.zip"
+file.remove(zipped_path)
+files_to_zip <- list.files(unzipped_path, full.names = TRUE)
+zip(zipfile = zipped_path, files = files_to_zip, flags = "-j")
+
+#Now we can convert to GTFS
+gtfs_nr <- atoc2gtfs(path_in = zipped_path, ncores = 3, silent=FALSE)
+
+#Need to export and re-import it to get it in GTFS object-type
+gtfs_write(gtfs_nr, folder = "large_data", name = "gtfs_nr_test")
+gtfs_nr <- read_gtfs("large_data/gtfs_nr_test.zip")
+file.remove("large_data/gtfs_nr_test.zip")
+
+#Filter for London Overground services only
+gtfs_nr$routes <- gtfs_nr$routes %>%
+  filter(agency_id == 'LO') #routes
+#Now ensure compatibility with other gtfs files
+gtfs_nr$trips <- gtfs_nr$trips %>%
+  filter(route_id %in% gtfs_nr$routes$route_id) #trips
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  filter(trip_id %in% gtfs_nr$trips$trip_id) #stop_times
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  filter(stop_id %in% gtfs_nr$stop_times$stop_id) #stops
+gtfs_nr$agency <- gtfs_nr$agency %>%
+  filter(agency_id == 'LO') #agency
+gtfs_nr$calendar <- gtfs_nr$calendar %>%
+  filter(service_id %in% gtfs_nr$trips$service_id) #calendar
+gtfs_nr$calendar_dates <- gtfs_nr$calendar_dates %>%
+  filter(service_id %in% gtfs_nr$trips$service_id) #calendar_dates
+
+#Removing transfers.txt, as we don't have this in the Traveline data
+gtfs_nr$transfers <- NULL
+
+#Let's filter out rail replacement buses - for easier platform ID matching later
+gtfs_nr <- filter_by_route_type(gtfs_nr, route_type = 2, keep = TRUE)
+
+#Make trains stopping at Cannonbury ELL (CNNBELL) just stop at Cannonbury (CNNB) - it is the same station
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  mutate(stop_id = if_else(stop_id == 'CNNBELL', 'CNNB', stop_id))
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  filter(!stop_id == 'CNNBELL')
+
+#And Highbury & Islington ELL (HIGHBYE) to Highbury & Islington Rail Station (HIGHBYA)
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  mutate(stop_id = if_else(stop_id == 'HIGHBYE', 'HIGHBYA', stop_id))
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  filter(!stop_id == 'HIGHBYE')
+
+#And Willesden Junction Low Level (WLSDNJL) to Willesden Junction Rail Station (WLSDJHL)
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  mutate(stop_id = if_else(stop_id == 'WLSDNJL', 'WLSDJHL', stop_id))
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  filter(!stop_id == 'WLSDNJL')
+
+#And New Cross Gate ELL (NEWXGEL) to New Cross Gate (NEWXGTE)
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  mutate(stop_id = if_else(stop_id == 'NEWXGEL', 'NEWXGTE', stop_id))
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  filter(!stop_id == 'NEWXGEL')
+
+#Combine both Clapham Junctions (CLPHMJ1, CLPHMJC)
+gtfs_nr$stop_times <- gtfs_nr$stop_times %>%
+  mutate(stop_id = if_else(stop_id == 'CLPHMJ1', 'CLPHMJC', stop_id))
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  filter(!stop_id == 'CLPHMJ1')
+
+#Move Barking station onto street network
+gtfs_nr$stops <- gtfs_nr$stops %>%
+  mutate(stop_lon = if_else(stop_id == 'BARKING', 0.081114, stop_lon),
+         stop_lat = if_else(stop_id == 'BARKING', 51.53926, stop_lat))
 
 # ------ Cleaning Stops and Matching IDs --------
 
@@ -242,43 +241,34 @@ gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
   group_by(tfl_id) %>%
   filter(!(tfl_id == "HUBLST" & row_number() > 1)) %>%
   ungroup()
-
 #Do the same for Euston
 gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
   group_by(tfl_id) %>%
   filter(!(tfl_id == "HUBWFJ" & row_number() > 1)) %>%
   ungroup()
-
 #Chingford - looks like most services are from Platform 2
 gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
   group_by(tfl_id) %>%
   filter(!(tfl_id == "910GCHINGFD" & row_number() != 2)) %>%
   ungroup()
-
 #Dalston Junction - looks like all Southbound platforms are used equally frequently, let's take the first
 gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
   filter(!(tfl_id == "910GDALS" & platform_number %in% c(3, 4)))
-
 #Richmond - looks like platform 5 is the most frequent for Overground
 gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
   filter(!(tfl_id == "HUBRMD" & platform_number %in% c(3, 4)))
-
 #Barking Riverside - looks like both platforms are used equally, will just pick 1
 gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
   filter(!(tfl_id == "910GBKRVS" & platform_number == 2))
-
 #Barking - looks like platform 8 is more used for Westbound services than 1
 gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
   filter(!(tfl_id == "HUBBKG" & platform_number == 1))
-
 #Crystal Palace - departures mostly from platform 3
 gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
   filter(!(tfl_id == "HUBCYP" & platform_number == 5))
-
 #Euston - departures mostly from platform 9
 gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
   filter(!(tfl_id == "HUBEUS" & platform_number == 10))
-
 #Norwood Junction - departures mostly from 1 and 5
 gtfs_nr_stops_join <- gtfs_nr_stops_join %>%
   filter(!(tfl_id == "HUBNWD" & platform_number %in% c(3, 6)))
@@ -479,8 +469,8 @@ gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
 #Stratford Westbound: 1 to Richmond/Camden, 2 to Clapham
 platform_codes <- c("RICHNLL", "CMDNRD", "ACTNCTL")
 gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
-  mutate(platform_id = if_else((platform_id == "HUBSRA-Plat02-WB-london-overground" & (first_stop %in% platform_codes |last_stop %in% platform_codes)), "HUBCLJ-Plat01-EB-london-overground", platform_id),
-         platform_number = if_else(platform_id == 'HUBCLJ-Plat01-EB-london-overground', "1", platform_number))
+  mutate(platform_id = if_else((platform_id == "HUBSRA-Plat02-WB-london-overground" & (first_stop %in% platform_codes |last_stop %in% platform_codes)), "HUBSRA-Plat01-WB-london-overground", platform_id),
+         platform_number = if_else(platform_id == 'HHUBSRA-Plat01-WB-london-overground', "1", platform_number))
 
 #Willesden Junction Eastbound
 #Looks like platform 2 is rarely used - let's remove it
@@ -496,14 +486,28 @@ gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
 #Limitations: for routes terminating before one of these, it is unclear which platform it departs from (as I'm comparing to live departures)
 #Another limitation was that because some of the TfL directions were incorrect or inconsistent, we don't know if they all joined correctly (we only found errors if there were nulls - what about multiple lines at the same station?)
 
-rm(check_nulls, direction_test, gtfs_nr_stops, problematic_trips, temp_gtfs_nr_stops_join, trip_directions, trip_id_lookup, directions, more_problematic_ids, platform_codes, problematic_trip_ids)
+#Reformatting stops.txt and stop_times.txt for reintegration into the GTFS object
+final_gtfs_nr_stops <- gtfs_nr_stops_join %>%
+  select(platform_id, tfl_id, stop_name, stop_lon, stop_lat) %>%
+  rename("stop_id" = platform_id,
+         "stop_code" = tfl_id)
 
-#Main tasks:
-# - Create new gtfs_nr$stops, with a new stop which can link to TfL platform info
-  # - Need to update gtfs_nr$stop_times and gtfs_nr$stops in GTFS object
-  # - Ensure to validate network afterwards
-# - Turn London GTFS data into TfL platforms (should be easier!)
-# - Merge GTFS files, create new r5r_core
+final_gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
+  select(trip_id, arrival_time, departure_time, platform_id, stop_sequence)%>%
+  rename("stop_id" = platform_id)%>%
+  mutate(timepoint = 1)
 
-#Load in TFL stops data
-#tfl_stops <- read_csv("data/tfl_station_data/stops.txt")
+gtfs_nr$stops <- final_gtfs_nr_stops
+gtfs_nr$stop_times <- final_gtfs_nr_stop_times
+
+#Check GTFS object
+output_path <- tempfile("validation_result")
+validator_path <- download_validator(tempdir())
+validate_gtfs(gtfs_nr, output_path, validator_path)
+
+summary(gtfs_nr)
+
+#Export
+gtfs_write(gtfs_nr, folder = "large_data", name = "gtfs_overground")
+
+rm(check_nulls, direction_test, gtfs_nr_stops, problematic_trips, temp_gtfs_nr_stops_join, trip_directions, trip_id_lookup, directions, more_problematic_ids, platform_codes, problematic_trip_ids, output_path, validator_path, gtfs_nr_stops_join, gtfs_nr_stop_times, final_gtfs_nr_stops, final_gtfs_nr_stop_times, tfl_stations)
