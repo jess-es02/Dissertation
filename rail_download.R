@@ -509,8 +509,6 @@ summary(gtfs_nr)
 #Export
 gtfs_write(gtfs_nr, folder = "large_data", name = "gtfs_overground")
 
-rm(check_nulls, direction_test, gtfs_nr_stops, problematic_trips, temp_gtfs_nr_stops_join, trip_directions, trip_id_lookup, directions, more_problematic_ids, platform_codes, problematic_trip_ids, output_path, validator_path, gtfs_nr_stops_join, gtfs_nr_stop_times, final_gtfs_nr_stops, final_gtfs_nr_stop_times, tfl_stations)
-
 # ----- Processing Lizzie Line -----
 gtfs_nr <- read_gtfs("large_data/gtfs_nr_test.zip")
 
@@ -684,9 +682,62 @@ gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
   left_join(temp_gtfs_nr_stops_join, by = c("stop_id" = "nr_id", "cardinal_direction"))
 
 #Fix nulls
+gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
+  mutate(tfl_id = if_else(stop_id == 'HTRWTM5' & is.na(platform_id), 'HUBHX5', tfl_id),
+         stop_name = if_else(stop_id == 'HTRWTM5' & is.na(platform_id), 'Heathrow Terminal 5 Rail Station', stop_name),
+         stop_lon = if_else(stop_id == 'HTRWTM5' & is.na(platform_id), -0.48996, stop_lon),
+         stop_lat = if_else(stop_id == 'HTRWTM5' & is.na(platform_id), 51.47221, stop_lat),
+         platform_id = if_else(stop_id == 'HTRWTM5' & is.na(platform_id), 'HUBHX5-Plat04-EB-elizabeth', platform_id),
+         platform_number = if_else(stop_id == 'HTRWTM5' & is.na(platform_id), '4', platform_number))
+gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
+  mutate(tfl_id = if_else(stop_id == 'HTRWTM4' & is.na(platform_id), 'HUBHX4', tfl_id),
+         stop_name = if_else(stop_id == 'HTRWTM4' & is.na(platform_id), 'Heathrow Terminal 4 Rail Station', stop_name),
+         stop_lon = if_else(stop_id == 'HTRWTM4' & is.na(platform_id), -0.44625, stop_lon),
+         stop_lat = if_else(stop_id == 'HTRWTM4' & is.na(platform_id), 51.45934, stop_lat),
+         platform_id = if_else(stop_id == 'HTRWTM4' & is.na(platform_id), 'HUBHX4-Plat01-WB-elizabeth', platform_id),
+         platform_number = if_else(stop_id == 'HTRWTM4' & is.na(platform_id), '1', platform_number))
+gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
+  mutate(tfl_id = if_else(stop_id == 'ABWDXR' & is.na(platform_id), 'HUBABW', tfl_id),
+         stop_name = if_else(stop_id == 'ABWDXR' & is.na(platform_id), 'ABBEY WOOD (CROSSRAIL)', stop_name),
+         stop_lon = if_else(stop_id == 'ABWDXR' & is.na(platform_id), 0.11975, stop_lon),
+         stop_lat = if_else(stop_id == 'ABWDXR' & is.na(platform_id), 51.49108, stop_lat),
+         platform_id = if_else(stop_id == 'ABWDXR' & is.na(platform_id), 'HUBABW-Plat04-WB-elizabeth', platform_id),
+         platform_number = if_else(stop_id == 'ABWDXR' & is.na(platform_id), '4', platform_number))
 
 #Manually fix stations with multiple platforms in the same direction
-#Shenfield to be sorted manually: platform 5 to Heathrow, 6 to Paddington
-#Abbey Wood HUBABW
+#Shenfield: platform 5 to Heathrow, 6 to Paddington
+platform_codes <- c("HTRWTM4", "HTRWTM5")
+gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
+  mutate(platform_id = if_else((platform_id == "910GSHENFLD-Plat06-WB-elizabeth" & (first_stop %in% platform_codes |last_stop %in% platform_codes)), "910GSHENFLD-Plat05-WB-elizabeth", platform_id),
+         platform_number = if_else(platform_id == '910GSHENFLD-Plat05-WB-elizabeth', "5", platform_number))
+#Abbey Wood: there is variation, but mostly platform 4 to Heathrow, 3 elsewhere
+platform_codes <- c("RDNGSTN", "MDNHEAD")
+gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
+  mutate(platform_id = if_else((platform_id == "HUBABW-Plat04-WB-elizabeth" & (first_stop %in% platform_codes |last_stop %in% platform_codes)), "HUBABW-Plat03-WB-elizabeth", platform_id),
+         platform_number = if_else(platform_id == 'HUBABW-Plat03-WB-elizabeth', "3", platform_number))
 
+#Reformatting stops.txt and stop_times.txt for reintegration into the GTFS object
+final_gtfs_nr_stops <- gtfs_nr_stops_join %>%
+  select(platform_id, tfl_id, stop_name, stop_lon, stop_lat) %>%
+  rename("stop_id" = platform_id,
+         "stop_code" = tfl_id)
+
+final_gtfs_nr_stop_times <- gtfs_nr_stop_times %>%
+  select(trip_id, arrival_time, departure_time, platform_id, stop_sequence)%>%
+  rename("stop_id" = platform_id)%>%
+  mutate(timepoint = 1)
+
+gtfs_nr$stops <- final_gtfs_nr_stops
+gtfs_nr$stop_times <- final_gtfs_nr_stop_times
+
+#Check GTFS object
+output_path <- tempfile("validation_result")
+validator_path <- download_validator(tempdir())
+validate_gtfs(gtfs_nr, output_path, validator_path)
+summary(gtfs_nr)
+
+#Export and clean folder
+gtfs_write(gtfs_nr, folder = "large_data", name = "gtfs_elizabeth_line")
 file.remove("large_data/gtfs_nr_test.zip")
+
+rm(check_nulls, direction_test, gtfs_nr_stops, problematic_trips, temp_gtfs_nr_stops_join, trip_directions, trip_id_lookup, directions, more_problematic_ids, platform_codes, problematic_trip_ids, output_path, validator_path, gtfs_nr_stops_join, gtfs_nr_stop_times, final_gtfs_nr_stops, final_gtfs_nr_stop_times, tfl_stations, platforms_to_remove)
