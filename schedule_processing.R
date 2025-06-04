@@ -1,4 +1,3 @@
-# 1) Processing Timetables
 
 library(tidyverse)
 library(UK2GTFS)
@@ -29,7 +28,7 @@ library(r5r)
 api_key <- Sys.getenv("tfl_api_key")
 
 #Function to query a single stop 
-# #We add an option to get stop information without coordinates, for calling later
+#We add an option to get stop information without coordinates, for calling later
 get_stop_id <- function(stop_id, with_coords = TRUE) {
  url <- paste0('https://api.tfl.gov.uk/StopPoint/', stop_id, "?app_key=", api_key)
  response <- GET(url)
@@ -136,6 +135,7 @@ get_stop_id <- function(stop_id, with_coords = TRUE) {
 #   mutate(stop_lon = if_else(stop_id %in% barking_stops, 0.081114, stop_lon),
 #          stop_lat = if_else(stop_id %in% barking_stops, 51.53926, stop_lat))
 # rm(barking_stops)
+# #This obviously changes the distance that would be traversed between them, but it seems negligible (0.3 min previously versus 0 now)
 # 
 # #2) Upney Underground station looks too far from a walkway - let's move it closer to the road (the only entrance is here anyway)
 # gtfs$stops <- gtfs$stops %>%
@@ -158,12 +158,15 @@ get_stop_id <- function(stop_id, with_coords = TRUE) {
 # rm(path, missing_stop_ids, output_path, validator_path, extra_stop_ids, hpc_row)
 
 #Load in created network
-gtfs <- read_gtfs("large_data/gtfs_london.zip")
+gtfs <- gtfstools::read_gtfs("large_data/gtfs_london.zip")
 gtfs$stops <- gtfs$stops %>%
   mutate(stop_lon = as.numeric(stop_lon))
 summary(gtfs)
 
-# ------ Create lookup table between GTFS IDs and TfL stop IDs ------
+# --- Join stops with platform IDs ---
+#For joining with National Rail GTFS and TfL accessibility data
+
+#First, create lookup table between GTFS IDs and TfL stop IDs
 
 #Filter to only stops on London Underground routes (route_type = 1); bus, DLR, and tram are fully accessible
 tube_trips <- gtfs$routes %>%
@@ -184,6 +187,118 @@ id_lookup <- tube_stops %>%
 
 id_lookup %>% distinct(tfl_id) %>% nrow() #270 - correct (as there are two Edgware Roads and Hammersmiths)
 rm(tube_trips, stops_on_tube_trips, tube_stops)
+
+#Load platforms
+platforms <- read_csv("data/tfl_station_data_detailed/Platforms.csv") %>%
+  clean_names() %>%
+  select(unique_id, station_unique_id, platform_number, cardinal_direction, platform_naptan_code) #%>%
+
+#Lots of platform_naptan_codes are null - let's check that it's just for non-tube lines only
+platforms <- platforms %>%
+  mutate(mode = str_extract(unique_id, "[^-]+$"))
+view(platforms %>% 
+       filter(is.na(platform_naptan_code))%>%
+       distinct(mode))
+#Manually append missing NAPTANs for London Underground stops
+platforms <- platforms %>%
+  mutate(
+    platform_naptan_code = case_when(
+      unique_id == '940GZZLUALD-Plat02-NB-metropolitan'  ~ '9400ZZLUALD1',
+      unique_id == '940GZZLUALD-Plat01-EB-circle'  ~ '9400ZZLUALD2',
+      unique_id == '940GZZLUALD-Plat04-WB-circle' ~ '9400ZZLUALD3',
+      unique_id == '940GZZLUALD-Plat03-NB-metropolitan' ~ '9400ZZLUALD4',
+      unique_id == '940GZZLUASG-Plat02-EB-piccadilly' ~ '9400ZZLUASG2',
+      unique_id == '940GZZLUASG-Plat03-WB-piccadilly' ~ '9400ZZLUASG3',
+      unique_id == '940GZZLUBWT-Plat01-WB-circle|district' ~ '9400ZZLUBWT2',
+      unique_id == '940GZZLUBWT-Plat02-EB-circle|district' ~ '9400ZZLUBWT1',
+      unique_id == '940GZZLUHSK-Plat01-WB-circle|district' ~ '9400ZZLUHSK2',
+      unique_id == '940GZZLUHSK-Plat02-EB-circle|district' ~ '9400ZZLUHSK1',
+      unique_id == '940GZZLUNHG-Plat04-WB-central' ~ '9400ZZLUNHG2',
+      unique_id == '940GZZLUNHG-Plat03-EB-central' ~ '9400ZZLUNHG1',
+      unique_id == '940GZZLUNHG-Plat01-WB-circle|district' ~ '9400ZZLUNHG4',
+      unique_id == '940GZZLUNHG-Plat02-EB-circle|district' ~ '9400ZZLUNHG3',
+      unique_id == '940GZZLUEPG-Plat01-WB-central' ~ '9400ZZLUEPG1',
+      unique_id == '940GZZLUNAN-Plat01-WB-central' ~ '9400ZZLUNAN2',
+      unique_id == '940GZZLUNAN-Plat03-EB-central' ~ '9400ZZLUNAN1',
+      unique_id == 'HUBEAL-Plat05-EB-central' ~ '9400ZZLUEBY1',
+      unique_id == 'HUBEAL-Plat05-EB-central' ~ '9400ZZLUEBY4',
+      unique_id == '940GZZLUMDN-Plat02-NB-northern' ~ '9400ZZLUMDN2',
+      unique_id == '940GZZLUMPK-Plat02-SB-metropolitan' ~ '9400ZZLUMPK2',
+      unique_id == '940GZZLUMPK-Plat01-NB-metropolitan' ~ '9400ZZLUMPK1',
+      unique_id == '940GZZLUMPK-Plat03-NB-metropolitan' ~ '9400ZZLUMPK3',
+      unique_id == 'HUBAMR-Plat02-SB-metropolitan' ~ '9400ZZLUAMS2',
+      unique_id == 'HUBAMR-Plat03-SB-metropolitan' ~ '9400ZZLUAMS1',
+      unique_id == '940GZZLURYO-Plat01-WB-circle|hammersmith-city' ~ '9400ZZLURYO2',
+      unique_id == '940GZZLURYO-Plat02-EB-circle|hammersmith-city' ~ '9400ZZLURYO1',
+      unique_id == '940GZZLUUXB-Plat01-EB-metropolitan|piccadilly' ~ '9400ZZLUUXB1',
+      unique_id == 'HUBKPA-Plat01-EB-district' ~ '9400ZZLUKOY1',
+      unique_id == 'HUBH13-Plat01-WB-piccadilly' ~ '9400ZZLUHRC2',
+      unique_id == 'HUBH13-Plat02-EB-piccadilly' ~ '9400ZZLUHRC1',
+      TRUE ~ platform_naptan_code))
+#Arnos Grove 1 and 4 will be left in platforms (Picadilly)
+#High St Ken 3 and 4 will be left in platforms (Circle|District)
+#Epping 2, North Acton 2, Ealing 6, and White City 2 and 3 will be left in platforms (Central)
+#One platform picked at random for Morden (all accessible anyway)
+#Moor Park 4, Amersham 1 left in platforms (Met)
+#Uxbridge picked one at random (doesn't matter as all accessible)
+
+#Manually remove NAPTANs for non-tube modes in case it complicates joining
+platforms <- platforms %>%
+  mutate(platform_naptan_code = if_else(mode == 'dlr' & !is.na(platform_naptan_code),
+                                        NA_character_,
+                                        platform_naptan_code))
+#Remove 9100STFD4 as it's not in the main NAPTAN CSV
+platforms <- platforms %>%
+  mutate(platform_naptan_code = if_else(platform_naptan_code == '9100STFD4',
+                                        NA_character_,
+                                        platform_naptan_code))
+
+#Look for duplicate NAPTAN codes
+#We can join multiple platforms to the same NAPTAN, but not vice versa
+view(platforms %>%
+      filter(!is.na(platform_naptan_code)) %>%
+      count(platform_naptan_code) %>%
+      filter(n > 1))
+#There are lots missing :( - manually fixing these
+platforms <- platforms %>%
+  mutate(
+    platform_naptan_code = case_when(
+      unique_id == '940GZZLUACY-Plat02-SB-northern'  ~ '9400ZZLUACY2',
+      unique_id == '940GZZLUAGL-Plat01-SB-northern' ~ '9400ZZLUAGL2',
+      unique_id == '940GZZLUBDS-Plat01-EB-piccadilly' ~ '9400ZZLUBDS2',
+      unique_id == '940GZZLUBLG-Plat01-WB-central' ~ '9400ZZLUBLG2',
+      unique_id == 'HUBBHO-Plat01-NB-victoria' ~ '9400ZZLUBLR2',
+      unique_id == 'HUBBDS-Plat01-WB-central' ~ '9400ZZLUBND4',
+      unique_id == '940GZZLUBTK-Plat02-SB-northern' ~ '9400ZZLUBTK2',
+      unique_id == '940GZZLUBTX-Plat02-SB-northern' ~ '9400ZZLUBTX2',
+      unique_id == '940GZZLUCAR-Plat01-EB-piccadilly' ~ '9400ZZLUCAR2',
+      unique_id == '940GZZLUCFM-Plat02-SB-northern' ~ '9400ZZLUCFM2',
+      unique_id == 'HUBCHX-Plat02-SB-bakerloo' ~ '9400ZZLUCHX2',
+      unique_id == '940GZZLUCND-Plat02-SB-northern' ~ '9400ZZLUCND2',
+      unique_id == '940GZZLUCPC-Plat02-SB-northern' ~ '9400ZZLUCPC2',
+      unique_id == '940GZZLUCPN-Plat02-SB-northern' ~ '9400ZZLUCPN2',
+      unique_id == '940GZZLUCPS-Plat02-SB-northern' ~ '9400ZZLUCPS2',
+      unique_id == '940GZZLUCSD-Plat02-SB-northern' ~ '9400ZZLUCSD2',
+      unique_id == 'HUBCAW-Plat01-WB-jubilee' ~ '9400ZZLUCYF2',
+      unique_id == '940GZZLUDOH-Plat02-SB-jubilee' ~ '9400ZZLUDOH2',
+      TRUE ~ platform_naptan_code))
+#Filtering out individual platforms - only doing this if it won't affect accessibility classification (or if platform is very infrequently used)
+platforms_to_remove <- c("940GZZLUBST-Plat02-NB-metropolitan", "940GZZLUBST-Plat04-NB-metropolitan",
+                         "HUBBAL-Plat02-SB-northern", "HUBBRX-Plat02-NB-victoria", "HUBCFO-Plat03-WB-metropolitan",
+                         "940GZZLUCKS-Plat02-WB-piccadilly", "940GZZLUCKS-Plat03-WB-piccadilly", "940GZZLUCKS-Plat04-WB-piccadilly",
+                         "940GZZLUDGE-Plat03-WB-district", "HUBEAL-Plat08-EB-district", "HUBEAL-Plat09-EB-district")
+platforms <- platforms %>%
+  filter(!unique_id %in% platforms_to_remove)
+
+#Check for any NAPTAN codes in platforms which aren't in gtfs$stops
+
+#Check all included
+
+#Make sure join is only affecting tube stops
+
+#Reintegrate into GTFS file
+
+#Check file validity
 
 # ------- Prepare geographic and demographic data -------
 
@@ -350,7 +465,7 @@ working_pop_lsoa <- read_csv("data/workforce_pop_lsoa.csv")%>%
 workforce_centroids <- workforce_centroids %>%
   left_join(., working_pop_lsoa, by="id")
 
-rm(london_codes, lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability, london_lsoas, stop_buffers, stop_buffer_lsoas, stop_locations)
+rm(lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability, london_lsoas, stop_buffers, stop_buffer_lsoas, stop_locations)
 
 # -------- Basic r5r query -----------
 
@@ -361,20 +476,37 @@ r5r_core <- setup_r5(data_path = "large_data", verbose=TRUE)
 #Some stops and centroids had to be manually moved to make them reachable via the street/PT network (see above)
 #And obviously note limitations with no elevation data, lack of consideration of road micro-geographies, etc.
 
-#Use accessibility function
-#see how long each takes - then add to for loop?
-# - trams classed as 0 - check whether these are included in prompt
-# - make sure RRS are not running?!
+access_test <- accessibility(r5r_core, 
+                             pop_centroids, 
+                             workforce_centroids,
+                             opportunities_colnames = c("working_pop"),
+                             mode = c("WALK", "TRANSIT"),
+                             cutoffs= 45)
+#Took approx 2 min to run
+#E01030658 has 0 access - even takes 60 min to walk to own centroid, because it is on opposite side of motorway!
+
+#Check access for LSOAs actually in London
+access_test_london <- access_test %>%
+  filter(id %in% london_codes$lsoa21cd)
+
+#Load in TFL stops data
+#tfl_stops <- read_csv("data/tfl_station_data/stops.txt")
 
 # To do:
-# - GTFS calendar looks wrong! Quick check to see if I am being silly? Otherwise could TfL API help?
-  #Waterloo and City looks good
-  #Check if 272 bus route only runs on Sat? If it also looks good (i.e. runs on all days) then make a note to ask Duncan
-# - Follow up re Overground
-# - Walking between platforms at Barking??
+# - Turn London GTFS data into TfL platforms (should be easier than last one!)
+# - Merge GTFS networks, create new r5r_core
+  # - Maybe change AOI with Overground and Lizzie?
+  # - Could do Greater London + 2km of extra tube stops only?
+# - Step-free network
+# - Accessibility query
+  # - See how long each takes - then add to for loop?
+  # - Ensure RRS aren't running?
 
 #Basic vis I will need:
 # - public transport network
 # - public transport accessible network
 # - disability distribution
 # - workplace pop dist (autocorrelation?)
+
+stop_r5(r5r_core)
+rJava::.jgc(R.gc = TRUE)
