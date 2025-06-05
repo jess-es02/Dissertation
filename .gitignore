@@ -10,6 +10,7 @@ old_code_and_data/
 rjavaenv/
 large_data/
 data_export_vis/
+final_r5r/
 
 #qgis
 data_vis.qgz
