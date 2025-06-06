@@ -1,7 +1,7 @@
 #Processing socio-demographic data at LSOA-level
 
 #In this file, we:
-  # - Delineate the study area: all LSOAs in Greater London, and any within 2km of a tube stop outside of this area
+  # - Delineate the study area: all LSOAs in Greater London, and any within 2km of a tube/Overground stop outside of this area
   # - Prepare origins: population-weighted centroids
     # - We append information on total population, disabled population, and age bands
   # - Prepare destinations: workforce-weighted centroids (derived from OA-level statistics)
@@ -60,9 +60,17 @@ study_lsoas <- rbind(london_lsoas, stop_buffer_lsoas)%>%
 #st_write(study_lsoas, "data_export_vis/study_lsoas_new.gpkg", layer = "study_lsoas_O")
 #st_write(stops_on_tube_trips, "data_export_vis/tube_stops_all.gpkg")
 
-#Get bounding box for bbike OSM.pbf extract
-bbox <- st_bbox(study_lsoas%>%st_transform(., 4326))
-print(bbox)
+#Get bounding box for bbike OSM.pbf extract - considering both study LSOAs and all stops in the network
+all_stops <- gtfs$stops %>%
+  st_as_sf(., coords = c("stop_lon", "stop_lat"), crs=4326)
+bbox_stops <- st_bbox(all_stops)
+bbox_lsoas <- st_bbox(study_lsoas%>%st_transform(., 4326))
+bbox_combined <- c(
+  xmin = min(bbox_stops["xmin"], bbox_lsoas["xmin"]),
+  ymin = min(bbox_stops["ymin"], bbox_lsoas["ymin"]),
+  xmax = max(bbox_stops["xmax"], bbox_lsoas["xmax"]),
+  ymax = max(bbox_stops["ymax"], bbox_lsoas["ymax"]))
+print(bbox_combined)
 
 # ----- Origins: pop-weighted centroids -------
 
@@ -189,7 +197,7 @@ working_pop_lsoa <- read_csv("data/workforce_pop_lsoa.csv")%>%
 workforce_centroids <- workforce_centroids %>%
   left_join(., working_pop_lsoa, by="id")
 
-rm(lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability, london_lsoas, stop_buffers, stop_buffer_lsoas, stops_on_tube_trips, bbox)
+rm(lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability, london_lsoas, stop_buffers, stop_buffer_lsoas, stops_on_tube_trips, bbox_combined, bbox_lsoas, bbox_stops, all_stops)
 
 # -------- Basic r5r query -----------
 
@@ -197,6 +205,7 @@ rm(lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability, london_lsoas, 
 r5r_core <- setup_r5(data_path = "final_r5r", verbose=TRUE)
 #There are some "invalid turn restriction" errors but nothing too serious
 #Note that Heathrow stops are not reachable by foot, but are by PT
+  #Heathrow workforce centroid is also only reachable by PT
 #Some stops and centroids had to be manually moved to make them reachable via the street/PT network (see above)
 #And obviously note limitations with no elevation data, lack of consideration of road micro-geographies, etc.
 
@@ -215,8 +224,6 @@ access_test_london <- access_test %>%
 
 # To do:
 # - Create new r5r_core
-  # - Read through error messages?
-  # - Check all stops and centroids are included
 # - Look into OpenTripPlanner possibilities - maybe email Duncan re a meeting?
 # - Step-free network
 # - Accessibility query
@@ -231,3 +238,28 @@ access_test_london <- access_test %>%
 
 stop_r5(r5r_core)
 rJava::.jgc(R.gc = TRUE)
+
+#Check all stops join
+sample_origin <- workforce_centroids %>%
+  filter(id == 'E01017752')
+sample_dest <- workforce_centroids %>%
+  filter(id == 'E01000001')
+test_ttm_pt <- travel_time_matrix(r5r_core,
+                                sample_dest,
+                               sample_origin,
+                               mode = c("WALK", "TRANSIT"),
+                               max_trip_duration = 10000L,
+                               max_walk_time = 800,
+                               time_window = 1,
+                               percentiles = 1)
+#Some times are very long - let's join and export
+test_ttm_pt <- test_ttm_pt %>%
+  left_join(., study_lsoas, by=c("to_id" = "lsoa21cd"))
+st_write(test_ttm_pt, "data_export_vis/ttm_check.gpkg", driver = "GPKG")
+
+
+library(osmextract)
+osm_path <- oe_get("Hertfordshire",
+                  provider = "geofabrik",
+                  download_directory = "data_export_vis",
+                  download_only = TRUE)
