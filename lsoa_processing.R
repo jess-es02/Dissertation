@@ -11,8 +11,13 @@ library(tidyverse)
 library(janitor)
 options(java.parameters = "-Xmx2G")
 library(r5r)
+library(gtfstools)
+library(sf)
 
-#1) ----- Prepare AOI ------
+gtfs <- gtfstools::read_gtfs("final_r5r/gtfs.zip")
+summary(gtfs)
+
+# ----- Prepare AOI ------
 
 #LSOA boundaries
 lsoas <- st_read("data/LSOA_2021_EW_BSC_V4.shp")%>%
@@ -28,21 +33,38 @@ london_codes <- read_csv("data/london_lsoas.csv")%>%
 london_lsoas <- lsoas %>%#
   filter(lsoa21cd %in% london_codes$lsoa21cd)
 
-#Add on any LSOAs with GTFS stops (even if they're outside of London)
-stop_locations <- gtfs$stops %>%
+#Add on any LSOAs within 2km of tube/Overground stops outside of London
+#Decided to exclude the Lizzie line as all stations are accessible anyway, and it extends very far outside London
+
+#Find tube stops
+stops_on_tube_trips <- gtfs$routes %>%
+  filter(route_type == 1 | (route_type == 2 & agency_id == 'LO'))%>%
+  left_join(., gtfs$trips, by ="route_id")%>%
+  distinct() %>% #all tube trips
+  select(trip_id)%>%
+  left_join(., gtfs$stop_times, by="trip_id")%>%
+  select(stop_id)%>%
+  distinct() %>%
+  left_join(., gtfs$stops, by="stop_id")%>%
   st_as_sf(., coords = c("stop_lon", "stop_lat"), crs=4326)%>%
   st_transform(., 27700)
 
 #Let's do a 2km buffer, to reflect people who can feasibly walk to these stops
-stop_buffers <- st_buffer(stop_locations, dist = 2000)
+stop_buffers <- st_buffer(stops_on_tube_trips, dist = 2000)
 #Find LSOAs intersecting with the stop buffers
 stop_buffer_lsoas <- st_filter(lsoas, stop_buffers)
 
 #Combine all potential LSOAs: those in London, and those within 2km of a London transport stop
 study_lsoas <- rbind(london_lsoas, stop_buffer_lsoas)%>%
   distinct(lsoa21cd, .keep_all = TRUE)
+#st_write(study_lsoas, "data_export_vis/study_lsoas_new.gpkg", layer = "study_lsoas_O")
+#st_write(stops_on_tube_trips, "data_export_vis/tube_stops_all.gpkg")
 
-#2) ----- Origins: pop-weighted centroids -------
+#Get bounding box for bbike OSM.pbf extract
+bbox <- st_bbox(study_lsoas%>%st_transform(., 4326))
+print(bbox)
+
+# ----- Origins: pop-weighted centroids -------
 
 #LSOA pop-weighted centroids: r5r-compatible format
 pop_centroids <- read_csv("data/lsoa_pop_weighted_centroids.csv")%>%
@@ -55,7 +77,7 @@ pop_centroids <- read_csv("data/lsoa_pop_weighted_centroids.csv")%>%
          "lat" = y) %>%
   filter(id %in% study_lsoas$lsoa21cd)
 
-#Two centroids do not join to the r5r network - manually moving these
+#One centroid does not join to the r5r network - manually moving this
 
 #a) Hillingdon 001E - in a gated community
 #Moving it very slightly so it aligns with the next (non-private) road over
@@ -63,13 +85,7 @@ pop_centroids <- pop_centroids %>%
   mutate(lon = if_else(id == 'E01002482', -0.410789, lon),
          lat = if_else(id == 'E01002482', 51.61021, lat))
 
-#b) Mole Valley 001B - on a private road (a school)
-#Moving it to the closest non-private road
-pop_centroids <- pop_centroids %>%
-  mutate(lon = if_else(id == 'E01030508', -0.290414, lon),
-         lat = if_else(id == 'E01030508', 51.30765, lat))
-
-#3) ------ Destinations: workplace-weighted centroids -------
+# ------ Destinations: workplace-weighted centroids -------
 #The ONS does not release these, so we will estimate using OA-level data
 
 #First, load in OA shapefile
@@ -103,7 +119,7 @@ workforce_centroids <- oas %>%
 #st_as_sf(., coords = c("lon", "lat"), crs=4326)%>%
 #st_transform(., 27700)
 
-#Five centroids do not join to the r5r network - manually moving these
+#Four centroids do not join to the r5r network - manually moving these
 
 #a) Hillingdon 001E - on a gated road
 #Moving to the closest non-gated road
@@ -132,12 +148,7 @@ workforce_centroids <- workforce_centroids %>%
   mutate(lon = if_else(id == 'E01023840', -0.408365, lon),
          lat = if_else(id == 'E01023840', 51.61951, lat))
 
-#e) Buckinghamshire 064C - on a golf course
-workforce_centroids <- workforce_centroids %>%
-  mutate(lon = if_else(id == 'E01017832', -0.598008, lon),
-         lat = if_else(id == 'E01017832', 51.53627, lat))
-
-#4) ------ Origin Attributes --------
+# ------ Origin Attributes --------
 
 #Age: proportion under 5 and 65+ (TS007B - Age by broad age bands)
 age <- read_csv("data/nomis_age.csv")%>%
@@ -166,7 +177,8 @@ pop_centroids <- pop_centroids %>%
   left_join(., age, by="id")%>%
   left_join(., disability, by="id")
 
-#5) ------ Destination Attributes: workforce pop -------
+# ------ Destination Attributes: workforce pop -------
+
 working_pop_lsoa <- read_csv("data/workforce_pop_lsoa.csv")%>%
   clean_names()%>%
   rename("id" = lower_layer_super_output_areas_code, 
@@ -177,12 +189,12 @@ working_pop_lsoa <- read_csv("data/workforce_pop_lsoa.csv")%>%
 workforce_centroids <- workforce_centroids %>%
   left_join(., working_pop_lsoa, by="id")
 
-rm(lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability, london_lsoas, stop_buffers, stop_buffer_lsoas, stop_locations)
+rm(lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability, london_lsoas, stop_buffers, stop_buffer_lsoas, stops_on_tube_trips, bbox)
 
 # -------- Basic r5r query -----------
 
 #Set up r5r network
-r5r_core <- setup_r5(data_path = "large_data", verbose=TRUE)
+r5r_core <- setup_r5(data_path = "final_r5r", verbose=TRUE)
 #There are some "invalid turn restriction" errors but nothing too serious
 #Note that Heathrow stops are not reachable by foot, but are by PT
 #Some stops and centroids had to be manually moved to make them reachable via the street/PT network (see above)
@@ -202,9 +214,10 @@ access_test_london <- access_test %>%
   filter(id %in% london_codes$lsoa21cd)
 
 # To do:
-# - Maybe change AOI with Overground and Lizzie?
-  # - Could do Greater London + 2km of extra tube stops only?
 # - Create new r5r_core
+  # - Read through error messages?
+  # - Check all stops and centroids are included
+# - Look into OpenTripPlanner possibilities - maybe email Duncan re a meeting?
 # - Step-free network
 # - Accessibility query
 # - See how long each takes - then add to for loop?

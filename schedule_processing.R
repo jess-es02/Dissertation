@@ -437,6 +437,9 @@ gtfs_stops <- gtfs_stops %>%
 turnpike_ids <- c("9400ZZLUTPN1", "9400ZZLUTPN2")
 gtfs_stops <- gtfs_stops %>%
   mutate(stop_code = if_else(stop_id %in% turnpike_ids, '940GZZLUTPN', stop_code))
+#And to Balham
+gtfs_stops <- gtfs_stops %>%
+  mutate(stop_code = if_else(stop_id == 'HUBBAL-Plat02-SB-northern', 'HUBBAL', stop_code))
 
 #Update GTFS stop_times using new platform IDs
 gtfs_stop_times <- gtfs$stop_times
@@ -517,7 +520,7 @@ final_gtfs$agency <- final_gtfs$agency %>%
 final_gtfs$stops <- final_gtfs$stops %>%
   distinct(stop_id, .keep_all = TRUE)
 
-#Filter out Fridays and weekends to reduce size
+#Filter out weekends to reduce size
 final_gtfs_no_weekends <- filter_by_weekday(final_gtfs, 
                                             weekday = c("saturday", "sunday"), 
                                             keep=FALSE)
@@ -531,4 +534,4 @@ gtfstools::validate_gtfs(final_gtfs_no_weekends, output_path, validator_path)
 dir.create("final_r5r")
 gtfs_write(final_gtfs_no_weekends, folder = "final_r5r", name = "gtfs")
 
-rm(final_gtfs, gtfs_lizzie, gtfs_london, gtfs_overground, london_stops, output_path, validator_path)
+rm(final_gtfs, gtfs_lizzie, gtfs_london, gtfs_overground, london_stops, output_path, validator_path, final_gtfs_no_weekends)
