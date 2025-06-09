@@ -4,8 +4,10 @@
   # - Convert the Traveline dataset for the entirety of London from TransXChange to GTFS
   # - Use TfL topology data to match each NAPTAN ID to its platform ID (for joining with accessibility data)
   # - Merge the resulting object with the Elizabeth Line and Overground GTFS files
+  # - Process TfL topology data to create a pathways.txt file reflecting wheelchair accessibility
 
 #Note that for memory reasons, the final exported GTFS object excludes weekends
+#Also note that the wheelchair accessibility only reflects accessibility to the platform - not necessarily to the train (I could extend this if I have time)
 
 library(tidyverse)
 library(UK2GTFS)

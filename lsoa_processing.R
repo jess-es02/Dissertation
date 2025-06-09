@@ -209,6 +209,9 @@ r5r_core <- setup_r5(data_path = "final_r5r", verbose=TRUE)
 #Some stops and centroids had to be manually moved to make them reachable via the street/PT network (see above)
 #And obviously note limitations with no elevation data, lack of consideration of road micro-geographies, etc.
 
+#Note that for the LSOAs very far away, detailed_itineraries returns much more realistic outputs than travel_time_matrix
+#Need to consider how this affects the accessibility function
+
 access_test <- accessibility(r5r_core, 
                              pop_centroids, 
                              workforce_centroids,
@@ -216,14 +219,12 @@ access_test <- accessibility(r5r_core,
                              mode = c("WALK", "TRANSIT"),
                              cutoffs= 45)
 #Took approx 2 min to run
-#E01030658 has 0 access - even takes 60 min to walk to own centroid, because it is on opposite side of motorway!
 
 #Check access for LSOAs actually in London
 access_test_london <- access_test %>%
   filter(id %in% london_codes$lsoa21cd)
 
 # To do:
-# - Create new r5r_core
 # - Look into OpenTripPlanner possibilities - maybe email Duncan re a meeting?
 # - Step-free network
 # - Accessibility query
@@ -238,28 +239,3 @@ access_test_london <- access_test %>%
 
 stop_r5(r5r_core)
 rJava::.jgc(R.gc = TRUE)
-
-#Check all stops join
-sample_origin <- workforce_centroids %>%
-  filter(id == 'E01017752')
-sample_dest <- workforce_centroids %>%
-  filter(id == 'E01000001')
-test_ttm_pt <- travel_time_matrix(r5r_core,
-                                sample_dest,
-                               sample_origin,
-                               mode = c("WALK", "TRANSIT"),
-                               max_trip_duration = 10000L,
-                               max_walk_time = 800,
-                               time_window = 1,
-                               percentiles = 1)
-#Some times are very long - let's join and export
-test_ttm_pt <- test_ttm_pt %>%
-  left_join(., study_lsoas, by=c("to_id" = "lsoa21cd"))
-st_write(test_ttm_pt, "data_export_vis/ttm_check.gpkg", driver = "GPKG")
-
-
-library(osmextract)
-osm_path <- oe_get("Hertfordshire",
-                  provider = "geofabrik",
-                  download_directory = "data_export_vis",
-                  download_only = TRUE)

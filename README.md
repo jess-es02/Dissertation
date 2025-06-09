@@ -10,7 +10,7 @@
   - [OA shapefile](https://geoportal.statistics.gov.uk/datasets/31dac98df61a4312991646842b147e2f_0/explore?location=52.693294%2C-2.489483%2C6.49) - to add to large_data folder
   - Traveline London zip file (london_traveline.zip), alongside converted GTFS zip file (gtfs_london.zip), saved in large_data folder
   - User would need their own TfL Unified API key, saved in .Renviron
-  - OSM road network, downloaded from bbike. Coords -0.7075569, 51.2867601 x 0.3338729, 51.7628908
+  - OSM road network, downloaded from bbike. Coords -0.972, 51.228 x 0.3339, 51.7629
     - I originally tried using osmextract (more reproducible) but there were problems with some of the tags, stopping setup_r5 from completing successfully
     - Note that I downloaded this data on 06/06/25
     - Should I upload this data myself? e.g. DropBox
