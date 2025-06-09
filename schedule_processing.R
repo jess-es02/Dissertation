@@ -19,6 +19,7 @@ library(httr)
 library(jsonlite)
 options(java.parameters = "-Xmx2G")
 library(r5r)
+library(igraph)
 
 # ------ Build base GTFS network ---------
 
@@ -525,7 +526,7 @@ final_gtfs_no_weekends <- filter_by_weekday(final_gtfs,
                                             weekday = c("saturday", "sunday"), 
                                             keep=FALSE)
 
-#Check validity - all looks good
+#Check validity
 output_path <- tempfile("validation_result")
 validator_path <- download_validator(tempdir())
 gtfstools::validate_gtfs(final_gtfs_no_weekends, output_path, validator_path)
@@ -535,3 +536,210 @@ dir.create("final_r5r")
 gtfs_write(final_gtfs_no_weekends, folder = "final_r5r", name = "gtfs")
 
 rm(final_gtfs, gtfs_lizzie, gtfs_london, gtfs_overground, london_stops, output_path, validator_path, final_gtfs_no_weekends)
+
+# -------- Adding accessibility information -------
+
+gtfs <- gtfstools::read_gtfs("final_r5r/gtfs.zip")
+summary(gtfs)
+
+#Loading TfL accessibility files
+stops <- read_csv("data/tfl_station_data/stops.txt")%>%
+  clean_names()
+pathways <- read_csv("data/tfl_station_data/pathways.txt")%>%
+  clean_names()
+
+#Build graph from pathways.txt
+edges <- pathways %>%
+  rename("from" = from_stop_id, 
+         "to" = to_stop_id) %>%
+  select(from, to, is_bidirectional)
+all_edges <- bind_rows(
+  edges,
+  edges %>% filter(is_bidirectional == 1) %>%
+    transmute(from = to, to = from, is_bidirectional))
+G <- graph_from_data_frame(all_edges, directed = TRUE)
+
+#First, let's check whether there's a path between station entrances and platforms
+
+#Extract entrances and platforms, and join these together
+entrances <- stops %>% 
+  filter(str_starts(stop_name, "Outside"))%>%
+  select(stop_id, parent_station)
+platforms <- stops %>%
+  filter(location_type == 0) %>%
+  select(stop_id, parent_station)
+
+platform_entrance_pairs <- entrances %>%
+  inner_join(platforms, by = "parent_station", suffix = c("_entrance", "_platform"))
+
+#Filter for only pairs where both are in the graph
+valid_pairs <- platform_entrance_pairs %>%
+  filter(stop_id_entrance %in% V(G)$name,
+         stop_id_platform %in% V(G)$name)
+
+unique_entrances <- unique(valid_pairs$stop_id_entrance)
+unique_platforms <- unique(valid_pairs$stop_id_platform)
+
+#Calculate distances between entrances and platforms
+dist_matrix_entrance_to_platform <- distances(G, v = unique_entrances, to = unique_platforms)
+dist_matrix_platform_to_entrance <- distances(G, v = unique_platforms, to = unique_entrances)
+
+#Extract the distance for each pair (ChatGPT helped with indexing due to duplicates)
+entrance_idx <- setNames(seq_along(unique_entrances), unique_entrances)
+platform_idx <- setNames(seq_along(unique_platforms), unique_platforms)
+valid_pairs <- valid_pairs %>%
+  mutate(
+    dist_entrance_to_platform = dist_matrix_entrance_to_platform[cbind(
+      entrance_idx[stop_id_entrance], 
+      platform_idx[stop_id_platform])],
+    dist_platform_to_entrance = dist_matrix_platform_to_entrance[cbind(
+      platform_idx[stop_id_platform], 
+      entrance_idx[stop_id_entrance])]
+  )
+
+#Reformat for integration into pathways.txt
+valid_pairs <- valid_pairs %>%
+  mutate(dist_entrance_to_platform = if_else(dist_entrance_to_platform == Inf, NA, dist_entrance_to_platform),
+         dist_platform_to_entrance = if_else(dist_platform_to_entrance == Inf, NA, dist_platform_to_entrance))
+accessible_paths <- valid_pairs %>%
+  filter(!is.na(dist_entrance_to_platform) | !is.na(dist_platform_to_entrance)) %>%
+  mutate(
+    is_bidirectional = case_when(
+      !is.na(dist_entrance_to_platform) & !is.na(dist_platform_to_entrance) ~ 1,
+      TRUE ~ 0),
+    from_stop_id = case_when(
+      is_bidirectional == 1 ~ stop_id_entrance,
+      !is.na(dist_entrance_to_platform) ~ stop_id_entrance,
+      TRUE ~ stop_id_platform),
+    to_stop_id = case_when(
+      is_bidirectional == 1 ~ stop_id_platform,
+      !is.na(dist_entrance_to_platform) ~ stop_id_platform,
+      TRUE ~ stop_id_entrance)) %>%
+  select(from_stop_id, to_stop_id, is_bidirectional)
+
+#Now, let's check whether there is a path between individual platforms in the same station
+platform_pairs <- platforms %>%
+  group_by(parent_station) %>%
+  filter(n() >= 2) %>%  #remove any stations which don't have multiple platforms
+  summarise(pairs = list(as.data.frame(t(combn(stop_id, 2)))), .groups = "drop") %>% #generate all potential pairs
+  unnest(cols = pairs) %>%
+  rename("stop_id_platform_1" = V1, 
+         "stop_id_platform_2" = V2)
+
+#Make sure both are in the accessible graph
+valid_platform_pairs <- platform_pairs %>%
+  filter(stop_id_platform_1 %in% V(G)$name,
+         stop_id_platform_2 %in% V(G)$name)
+
+#Remove duplicate platforms
+unique_platforms_in_pairs <- unique(c(valid_platform_pairs$stop_id_platform_1, valid_platform_pairs$stop_id_platform_2))
+
+#Calculate distances
+dist_matrix_platforms <- distances(G, v = unique_platforms_in_pairs, to = unique_platforms_in_pairs)
+
+#Extract the distance for each pair
+platform_pairs_idx <- setNames(seq_along(unique_platforms_in_pairs), unique_platforms_in_pairs)
+valid_platform_pairs <- valid_platform_pairs %>%
+  mutate(
+    dist_1_to_2 = dist_matrix_platforms[cbind(platform_pairs_idx[stop_id_platform_1], platform_pairs_idx[stop_id_platform_2])],
+    dist_2_to_1 = dist_matrix_platforms[cbind(platform_pairs_idx[stop_id_platform_2], platform_pairs_idx[stop_id_platform_1])])
+
+#Reformat for integration into pathways.txt
+valid_platform_pairs <- valid_platform_pairs %>%
+  mutate(dist_1_to_2 = if_else(dist_1_to_2 == Inf, NA, dist_1_to_2),
+         dist_2_to_1 = if_else(dist_2_to_1 == Inf, NA, dist_2_to_1))
+accessible_platform_paths <- valid_platform_pairs %>%
+  filter(!is.na(dist_1_to_2) | !is.na(dist_2_to_1)) %>%
+  mutate(
+    is_bidirectional = case_when(
+      !is.na(dist_1_to_2) & !is.na(dist_2_to_1) ~ 1,
+      TRUE ~ 0),
+    from_stop_id = case_when(
+      is_bidirectional == 1 ~ stop_id_platform_1,
+      !is.na(dist_1_to_2) ~ stop_id_platform_1,
+      TRUE ~ stop_id_platform_2),
+    to_stop_id = case_when(
+      is_bidirectional == 1 ~ stop_id_platform_2,
+      !is.na(dist_1_to_2) ~ stop_id_platform_2,
+      TRUE ~ stop_id_platform_1)) %>%
+  select(from_stop_id, to_stop_id, is_bidirectional)
+
+#Combine both dataframes and finalise formatting
+pathways_final <- rbind(accessible_paths, accessible_platform_paths)%>%
+  mutate(pathway_id = paste0(from_stop_id, "-", to_stop_id),
+         pathway_mode = 1)%>% #this is a lie - but keeping the column in just in case
+  select(pathway_id, from_stop_id, to_stop_id, pathway_mode, is_bidirectional)
+
+#Add station entrances to GTFS stops
+entrance_rows <- stops %>%
+  filter(stop_id %in% entrances$stop_id | stop_id %in% entrances$parent_station)%>%
+  select(-stop_desc, -level_id, -platform_code)%>%
+  select(stop_id, stop_code, stop_name, stop_lon, stop_lat, location_type, parent_station)
+#Alter existing tube/Overground stations - should have parent station, no stop code, location_type = 0
+gtfs_stops_altered <- gtfs$stops %>%
+  mutate(location_type = 0,
+         parent_station = if_else(stop_code %in% stops$stop_code, stop_code, NA),
+         stop_code = if_else(stop_code %in% stops$stop_code, NA, stop_code))
+#Combine
+final_stops <- rbind(entrance_rows, gtfs_stops_altered)
+
+#Remove stops/pathways if they are not already in gtfs$stops
+final_stops <- final_stops %>%
+  filter(stop_code %in% gtfs$stops$stop_code | parent_station %in% gtfs$stops$stop_code)
+pathways_final <- pathways_final %>%
+  filter(from_stop_id %in% final_stops$stop_id,
+         to_stop_id %in% final_stops$stop_id)
+
+#Pathways logic above doesn't deal well with unidirectional edges - let's manually correct these
+pathways_final <- pathways_final %>%
+  mutate(is_bidirectional = if_else(from_stop_id == 'HUBBKG-Plat07-EB-london-overground|national-rail' & to_stop_id == 'HUBBKG-Plat08-WB-london-overground|national-rail', 0, is_bidirectional))
+pathways_final <- pathways_final %>%
+  mutate(pathway_id = if_else(pathway_id == 'HUBPAD-Outside-HUBPAD-Plat02-EB-circle|district', 'HUBPAD-Plat02-EB-circle|district-HUBPAD-Outside', pathway_id),
+         from_stop_id = if_else(pathway_id == 'HUBPAD-Plat02-EB-circle|district-HUBPAD-Outside', 'HUBPAD-Plat02-EB-circle|district', from_stop_id),
+         to_stop_id = if_else(pathway_id == 'HUBPAD-Plat02-EB-circle|district-HUBPAD-Outside', 'HUBPAD-Outside', to_stop_id),
+         is_bidirectional = if_else(pathway_id == 'HUBPAD-Plat02-EB-circle|district-HUBPAD-Outside', 0, is_bidirectional))
+
+#Fill in lon and lat for each station using platform coordinates (imperfect, but should be fine)
+first_coords <- final_stops %>%
+  filter(location_type == 0 & !is.na(parent_station)) %>%
+  group_by(parent_station) %>%
+  slice(1)%>%
+  select(parent_station, stop_lon, stop_lat)%>%
+  rename("platform_lon" = stop_lon, "platform_lat" = stop_lat)
+final_stops <- final_stops %>%
+  left_join(first_coords, by = "parent_station") %>%
+  mutate(
+    stop_lon = if_else(is.na(stop_lon), platform_lon, stop_lon),
+    stop_lat = if_else(is.na(stop_lat), platform_lat, stop_lat)) %>%
+  select(-platform_lon, -platform_lat)%>%
+  left_join(first_coords, by = c("stop_code" = "parent_station")) %>%
+  mutate(
+    stop_lon = if_else(is.na(stop_lon), platform_lon, stop_lon),
+    stop_lat = if_else(is.na(stop_lat), platform_lat, stop_lat)) %>%
+  select(-platform_lon, -platform_lat)
+#This solves the problem but means walking distances are likely inaccurate
+
+#Add updated stops and pathways to GTFS
+gtfs$stops <- final_stops
+gtfs$pathways <- pathways_final
+
+#Add wheelchair_boarding field to stops.txt, to ensure stops not mentioned in pathways.txt are recognised as accessible
+#We will only do this for stops not in pathways.txt
+gtfs$stops <- gtfs$stops %>%
+  mutate(wheelchair_boarding = if_else(location_type == 0 & is.na(parent_station), 1, NA))
+
+#Check validity
+output_path <- tempfile("validation_result")
+validator_path <- download_validator(tempdir())
+gtfstools::validate_gtfs(gtfs, output_path, validator_path)
+#We get certain warnings about dangling stops, or stops excluded from pathways.txt, but this is because pathways.txt only includes accessible paths
+
+#Export
+gtfs_write(gtfs, folder = "final_r5r", name = "gtfs_accessible")
+
+#Not updating gtfs$trips as I think (hope) I can convey the accessibility information without this
+#Plan is:
+  # - Set all non-Underground/Overground stops to be wheelchair accessible in stops.txt (wheelchair_boarding = 1)
+  # - Accessibility for all Underground/Overground stops is determined by considering pathways.txt
+
+rm(list=ls())
