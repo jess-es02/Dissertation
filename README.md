@@ -2,7 +2,7 @@
 
 **To add for reproducibility:**
 - Setting up R Java environment, as in r5r instructions
-- Setting Java Home in .Renviron
+- Setting Java Home in .Renviron (JAVA_HOME for r5r, JAVA_HOME17 for OTP)
 - What to do with Traveline data? It's technically under the Government ODL so could probably be uploaded here (check) - but might be too large to do so anyway
   - If so, should probably upload Traveline (e.g. DropBox) because of all the specific things I have had to sort, e.g. problematic IDs - these are probably version-specific
 - Traveline data was downloaded 09/05/2025, National Rail 29/05/2025

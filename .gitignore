@@ -7,7 +7,8 @@
 
 #folders
 old_code_and_data/
-rjavaenv/
+rjavaenv-17/
+rjavaenv-21/
 large_data/
 data_export_vis/
 final_r5r/
