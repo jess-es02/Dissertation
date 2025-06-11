@@ -10,7 +10,7 @@ library(extrafont)
 gtfs <- gtfstools::read_gtfs("final_r5r/gtfs_accessible.zip")
 summary(gtfs)
 
-# ----- Categorising tube stops --------
+# ----- Stop accessibility classification --------
 
 #For visualising the network, we want to classify stops as fully, partially, or not accessible
 
@@ -32,7 +32,8 @@ all_edges <- bind_rows(
 G <- graph_from_data_frame(all_edges, directed = TRUE)
 
 station_groups <- tube_stops %>%
-  mutate(station_group = ifelse(location_type == 1, stop_id, parent_station)) %>%
+  filter(location_type != 1) %>%  #exclude parent station ids, as these aren't included in pathways.txt
+  mutate(station_group = parent_station) %>%
   group_by(station_group) %>%
   summarise(stops_in_station = list(stop_id), .groups = 'drop')
   
@@ -42,15 +43,20 @@ connectivity_results <- station_groups %>%
   rowwise() %>%
   mutate(
     stops_in_graph = list(intersect(stops_in_station, V(G)$name)),
-    classification = ifelse(length(stops_in_graph) == 0, "Inaccessible", {
-      #Check if all stops are in the same component
-      stop_components <- components$membership[stops_in_graph]
-      if (length(unique(stop_components)) == 1) {
-        "Fully Accessible"
-      } else {
+    classification = {
+      if (length(stops_in_graph) == 0) {
+        "Inaccessible"
+      } else if (length(stops_in_graph) < length(stops_in_station)) {
         "Partially Accessible"
+      } else {
+        stop_components <- components$membership[stops_in_graph]
+        if (length(unique(stop_components)) == 1) {
+          "Fully Accessible"
+        } else {
+          "Partially Accessible"
+        }
       }
-    })
+    }
   ) %>%
   ungroup()%>%
   select(station_group, classification)
@@ -61,7 +67,11 @@ tube_stations_main <- tube_stations_main %>%
   st_transform(., 27700)%>%
   select(stop_id, stop_name, classification, geometry)
 #Note that classifications are an overstatement - not accounting for gap between platform and train, length of interchange, different entrances, etc.
-#Also note that some classifications seem to differ to TfL data on its step-free map - however, this looks like it's due to problems in the pathways data they provided, rather than computational problems
+#Also note that some classifications (e.g. Peckham Rye) seem to differ to TfL data on its step-free map - however, this looks like it's due to problems in the pathways data they provided, rather than computational problems
+
+#Manually class Battersea Park as inaccessible - it is completely missing from TfL data, but online it says no platforms are accessible
+tube_stations_main <- tube_stations_main %>%
+  mutate(classification = if_else(stop_id == 'BATRSPK', 'Inaccessible', classification))
 
 rm(all_edges, components, connectivity_results, edges, G, station_groups, tube_stops)
 
@@ -112,4 +122,51 @@ tm_shape(boundary, bbox = bbox_combined) +
   dpi=300)
 #Could also use Segoe UI Light for other features
 
-#Re-check classification - why does 910GHTCHEND differ from web?
+#Quick map without Lizzie line (potentially more reflective of study focus)
+#Extract only tube/Overground stops
+to_trips <- gtfs$routes %>%
+  filter(route_type == 1 | #tube
+         (route_type == 2 & agency_id == 'LO'))%>% #overground
+  left_join(., gtfs$trips, by ="route_id")%>%
+  distinct()
+stops_no_lizzie <- to_trips %>%
+  select(trip_id)%>%
+  left_join(., gtfs$stop_times, by="trip_id")%>%
+  select(stop_id)%>%
+  distinct()%>%
+  left_join(., gtfs$stops, by="stop_id")%>%
+  mutate(parent_station = if_else(stop_id == 'BATRSPK', 'BATRSPK', parent_station))%>% #fix battersea park
+  distinct(parent_station)%>%
+  left_join(., tube_stations_main, by=c("parent_station" = "stop_id"))%>%
+  st_as_sf()
+bbox_stations <- st_bbox(stops_no_lizzie)
+bbox_combined <- st_as_sfc(st_bbox(c(
+  xmin = min(bbox_stations["xmin"], bbox_boundary["xmin"]),
+  ymin = min(bbox_stations["ymin"], bbox_boundary["ymin"]),
+  xmax = max(bbox_stations["xmax"], bbox_boundary["xmax"]),
+  ymax = max(bbox_stations["ymax"], bbox_boundary["ymax"])
+), crs = st_crs(27700)))
+#Plot
+tmap_save(
+  tm_shape(boundary, bbox=bbox_combined) +
+    tm_lines()+
+    tm_shape(stops_no_lizzie)+
+    tm_dots(size=0.45,
+            shape=21,
+            fill = "classification", 
+            fill.scale = tm_scale_categorical(values = mapping),
+            fill.legend = tm_legend(title = "Accessibility Status"),
+            lwd=0.2)+
+    tm_basemap("Esri.OceanBasemap")+
+    tm_title("Step-Free Accessibility of TfL Underground and Overground Services")+
+    tm_compass(type="8star", size=3, position = c(0.9, 0.22))+
+    tm_scalebar(position = c(0.75, 0.08), text.size=0.7, breaks=c(0, 5, 10, 15))+
+    tm_layout(legend.position = c("left", "bottom"), 
+              legend.bg.color="white",
+              title.fontfamily = "Segoe UI Semibold",
+              legend.text.fontfamily = "Segoe UI",
+              legend.title.fontfamily = "Segoe UI Semibold",
+              legend.text.size = 1,   
+              legend.title.size = 1.1),
+  filename = "maps/stations_nolizzie.png",
+  dpi=300)

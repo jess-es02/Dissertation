@@ -730,6 +730,10 @@ gtfs$pathways <- pathways_final
 gtfs$stops <- gtfs$stops %>%
   mutate(wheelchair_boarding = if_else(location_type == 0 & is.na(parent_station), 1, NA))
 
+#Set Battersea Park location type to 1 (station) rather than 0 (platform) - for overall classifications
+gtfs$stops <- gtfs$stops %>%
+  mutate(location_type = if_else(stop_id == 'BATRSPK', 1, location_type))
+
 #Check validity
 output_path <- tempfile("validation_result")
 validator_path <- download_validator(tempdir())
