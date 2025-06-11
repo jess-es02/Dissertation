@@ -155,8 +155,7 @@ tmap_save(
             shape=21,
             fill = "classification", 
             fill.scale = tm_scale_categorical(values = mapping),
-            fill.legend = tm_legend(title = "Accessibility Status"),
-            lwd=0.2)+
+            fill.legend = tm_legend(title = "Accessibility Status"))+
     tm_basemap("Esri.OceanBasemap")+
     tm_title("Step-Free Accessibility of TfL Underground and Overground Services")+
     tm_compass(type="8star", size=3, position = c(0.9, 0.22))+
@@ -169,4 +168,81 @@ tmap_save(
               legend.text.size = 1,   
               legend.title.size = 1.1),
   filename = "maps/stations_nolizzie.png",
+  dpi=300)
+
+rm(to_trips, bbox_boundary, bbox_stations)
+
+# ------ Study area map -------
+#This assumes lsoa_processing has been run first
+
+tmap_save(
+tm_shape(study_lsoas) +
+  tm_polygons(col = "cadetblue", 
+              alpha=0.3,
+              border.col = "bisque4") +
+  tm_add_legend(type = "polygons",
+                labels = "LSOAs",
+                fill = "cadetblue",
+                col = "bisque4") +
+  tm_shape(stops_no_lizzie) +
+  tm_dots(col = "white", 
+          border.col="black",
+          col.legend = tm_legend(title = ""),
+          shape=21,
+          size=0.6) +
+  tm_add_legend(type = "dots",
+                labels = "Stations",
+                col="black") +
+  tm_basemap("Esri.OceanBasemap") +
+  tm_title("Research Area of Interest") +
+  tm_compass(type = "8star", 
+             size = 3, 
+             position = c(0.9, 0.22)) +
+  tm_scalebar(position = c(0.82, 0.08), 
+              text.size = 0.7, 
+              breaks = c(0, 5, 10))+
+  tm_layout(legend.position = c("left", "bottom"), 
+            legend.bg.color="white",
+            title.fontfamily = "Segoe UI Semibold",
+            title.size = 1.6,
+            legend.text.fontfamily = "Segoe UI",
+            legend.title.fontfamily = "Segoe UI Semibold",
+            legend.text.size = 1.1,   
+            legend.title.size = 1.1),
+  filename = "maps/study_area.png",
+  dpi=300)
+
+#The same, but mapped according to station classification
+tmap_save(
+  tm_shape(study_lsoas) +
+    tm_polygons(col = "cadetblue", 
+                alpha=0.3,
+                border.col = "bisque4") +
+    tm_add_legend(type = "polygons",
+                  labels = "LSOAs",
+                  fill = "cadetblue",
+                  col = "bisque4") +
+    tm_shape(stops_no_lizzie) +
+    tm_dots(fill = "classification", 
+            fill.scale = tm_scale_categorical(values = mapping),
+            fill.legend = tm_legend(title = "Station"),
+            shape=21,
+            size=0.6) +
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Research Area of Interest") +
+    tm_compass(type = "8star", 
+               size = 3, 
+               position = c(0.9, 0.22)) +
+    tm_scalebar(position = c(0.82, 0.08), 
+                text.size = 0.7, 
+                breaks = c(0, 5, 10))+
+    tm_layout(legend.position = c("left", "bottom"), 
+              legend.bg.color="white",
+              title.fontfamily = "Segoe UI Semibold",
+              title.size = 1.6,
+              legend.text.fontfamily = "Segoe UI",
+              legend.title.fontfamily = "Segoe UI Semibold",
+              legend.text.size = 0.9,   
+              legend.title.size = 1),
+  filename = "maps/study_area_station_classified.png",
   dpi=300)
