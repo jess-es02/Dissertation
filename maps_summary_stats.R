@@ -1,3 +1,15 @@
+#General maps and summary statistics on station accessibility
+
+#In this file, we:
+  # - Categorise stations into accessibility types according to pathways.txt
+  # - Map stations and the study area
+  # - Find some general summary statistics on station accessibility type
+
+# Other maps are located in:
+# 1) job_comparison
+  # - Job distribution
+  # - Job distribution LISA
+
 library(tidyverse)
 library(sf)
 library(gtfstools)
@@ -7,7 +19,7 @@ library(maptiles)
 library(igraph)
 library(extrafont)
 
-gtfs <- gtfstools::read_gtfs("final_r5r/gtfs_accessible.zip")
+gtfs <- gtfstools::read_gtfs("final_r5r/gtfs_accessibleBAT1.zip")
 summary(gtfs)
 
 # ----- Stop accessibility classification --------
@@ -246,3 +258,22 @@ tmap_save(
               legend.title.size = 1),
   filename = "maps/study_area_station_classified.png",
   dpi=300)
+
+# ------- Station Classification Summary Statistics ------
+
+#Work out split by line
+gtfs_stops <- gtfs$stops %>%
+  mutate(parent_station = na_if(parent_station, "")) %>%
+  filter(location_type == 0 & !is.na(parent_station))
+#Note Battersea Park is not accessible - need to manually add to statistics
+
+#Join accessibility status
+gtfs_stops <- gtfs_stops %>%
+  left_join(tube_stations_main, by=c("parent_station" = "stop_id"))
+
+#Extract line
+gtfs_stops <- gtfs_stops %>%
+  mutate(
+    all_lines = str_extract(stop_id, "[^-]+$"),
+    lines = str_split(all_lines, "\\|"))
+#XXX come back to this

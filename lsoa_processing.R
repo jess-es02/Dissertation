@@ -212,24 +212,11 @@ r5r_core <- setup_r5(data_path = "final_r5r", verbose=TRUE)
 #Note that for the LSOAs very far away, detailed_itineraries returns much more realistic outputs than travel_time_matrix
 #Need to consider how this affects the accessibility function
 
-access_test <- accessibility(r5r_core, 
-                             pop_centroids, 
-                             workforce_centroids,
-                             opportunities_colnames = c("working_pop"),
-                             mode = c("WALK", "TRANSIT"),
-                             cutoffs= 45)
-#Took approx 2 min to run
-
-#Check access for LSOAs actually in London
-access_test_london <- access_test %>%
-  filter(id %in% london_codes$lsoa21cd)
-
-# To do:
-# - Look into OpenTripPlanner possibilities - maybe email Duncan re a meeting?
-# - Step-free network
-# - Accessibility query
+#To do:
+# - Look into jobs distribution and autocorrelation
+# - Set up OTP
+# - Accessibility query comparisons
 # - See how long each takes - then add to for loop?
-# - Ensure RRS aren't running?
 
 #Basic vis I will need:
 # - public transport network

@@ -14,4 +14,7 @@
     - I originally tried using osmextract (more reproducible) but there were problems with some of the tags, stopping setup_r5 from completing successfully
     - Note that I downloaded this data on 06/06/25
     - Should I upload this data myself? e.g. DropBox
+    - For OTP routing, it needs to be filtered using osmium
+      - User can download this themself (but I will probably have to upload it)
+      - Using the recommended command from the OSM website: `osmium tags-filter planet_-0.972,51.228_0.3339,51.7629.osm.pbf w/highway wa/public_transport=platform wa/railway=platform w/park_ride=yes r/type=restriction r/type=route -o filtered.osm.pbf -f pbf,add_metadata=false`
 - To get the Overground/Lizzie line data, user will need to register for the National Rail API and point to these in .Renviron

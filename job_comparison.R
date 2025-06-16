@@ -1,4 +1,86 @@
 library(opentripplanner)
+library(tmap)
+library(tmaptools)
+library(maptiles)
+library(extrafont)
+library(rcartocolor)
+library(spdep)
+library(tidyverse)
+
+# ------- Job EDA ---------
+
+#First, let's examine the distribution of jobs as opportunities
+#lsoa_processing should already have been run
+
+#Join workforce population to LSOA sf, get jobs per km^2
+study_lsoas_work <- study_lsoas %>%
+  left_join(., workforce_centroids, by=c("lsoa21cd" = "id"))%>%
+  select(-lat, -lon)%>%
+  mutate(area_km2 = as.numeric(st_area(geometry)) / 1e6,
+         jobs_per_km2 = working_pop/area_km2)
+summary(study_lsoas_work$jobs_per_km2) #some crazy values in small LSOAs
+
+tmap_mode("plot")
+tmap_options(component.autoscale = TRUE)
+breaks=c(0, 5000, 10000, 20000, 30000, 40000, 600000)
+tmap_save(
+  tm_shape(study_lsoas_work) +
+    tm_polygons(col = "jobs_per_km2",
+                style="fixed",
+                breaks=breaks,
+                border.col = "bisque4",
+                title = "Workers per km\u00B2",
+                palette="Peach",
+                textNA = "") +
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Distribution of Jobs Across Study LSOAs") +
+    tm_compass(type = "8star", 
+               size = 3, 
+               position = c(0.9, 0.22)) +
+    tm_scalebar(position = c(0.82, 0.08), 
+                text.size = 0.7, 
+                breaks = c(0, 5, 10))+
+    tm_layout(legend.position = c(0.01, 0.3), 
+              legend.bg.color="white",
+              legend.showNA = FALSE,
+              title.fontfamily = "Segoe UI Semibold",
+              title.size = 1.6,
+              legend.text.fontfamily = "Segoe UI",
+              legend.title.fontfamily = "Segoe UI Semibold",
+              legend.text.size = 0.7,   
+              legend.title.size = 0.8),
+  filename = "maps/job_dist.png",
+  dpi=300)
+#We can see CBDs in Central London and Canary Wharf, alongside many jobs in Croydon, Watford
+#Interestingly, high concentration of jobs around healthcare locations, e.g. Royal Free, Watford General (maybe less dispersion from WFH?)
+
+#Create spatial weights matrix
+#Two possibilities:
+  #1) Queen's case with normal centroids
+  #2) kNN with workforce centroids
+
+#Queen's Case with geometric centroids
+area_nb <- study_lsoas %>%
+  poly2nb(., queen=T)
+summary(area_nb)
+#We could manually join footbridges if needed
+#I tried kNN 6 but this rarely crossed the river either - Queen's seemed a better representation
+area.lw <- area_nb %>%
+  nb2listw(., style="W") 
+
+#Global spatial autocorrelation
+morans_i <- study_lsoas_work %>%	
+  pull(jobs_per_km2) %>%
+  as.vector() %>%
+  moran.test(., area.lw)
+morans_i
+
+#Potential extensions:
+  #Check for local spatial autocorrelation
+  #Distribution and LISA facet map?
+  #Associations with hospital POI?
+
+# ----- Set up OTP routing -------
 
 #Temporarily switch from Java 21 (for r5r) to 17 (for OTP)
 Sys.setenv(JAVA_HOME = Sys.getenv("JAVA_HOME17"))
@@ -7,33 +89,58 @@ Sys.setenv(PATH = paste0(Sys.getenv("JAVA_HOME"), "/bin;", Sys.getenv("PATH")))
 #Set up the OTP directory
 otp_path <- "otp"
 dir.create(otp_path, recursive = TRUE)
-path_otp <- otp_dl_jar(otp_path, cache = FALSE, version = "2.2.0")
+path_otp <- otp_dl_jar(otp_path, cache = TRUE, version = "2.2.0")
 
 #Create directory structure
 dir.create("otp/graphs/standard", recursive = TRUE)
 dir.create("otp/graphs/accessible", recursive = TRUE)
 
-#Need to work out how to copy GTFS and PBF here XXX
+#Next, manually paste the GTFS/accessible GTFS into each
+#Alongside the OSM road network, filtered with osmium
 
 #Build graphs
-log1 <- otp_build_graph(otp = path_otp, dir = otp_path, router = "standard", quiet=FALSE, memory=9216)
 
+# #Standard
+# log1 <- otp_build_graph(otp = path_otp, dir = otp_path, router = "standard", quiet=FALSE, memory=9216)
+# log2 <- otp_setup(otp = path_otp, dir = otp_path, router="standard")
+# otpcon <- otp_connect()
+# test_route <- otp_plan(otpcon, #Leicester Square to Camden Town
+#                       fromPlace = c(-0.12811, 51.51145), 
+#                       toPlace = c(-0.142915, 51.53929), 
+#                       mode = c("WALK", "TRANSIT"))
+# qtm(test_route%>%filter(route_option==2)) #all looks good
+# otp_stop()
 
-#Downloading new osm.pbf, in case that works
-library(osmextract)
-bbox_combined <- st_bbox(bbox_combined, crs = 4326)
-
-original <- getOption("timeout")
-options(timeout = max(5000, original))
-oe_get(st_as_sfc(bbox_combined), boundary=st_as_sfc(bbox_combined), download_directory="otp/graphs/standard")
-options(timeout = original)
-
-##Try other OTP versions!!
+#Wheelchair accessible
+log3 <- otp_build_graph(otp = path_otp, dir = otp_path, router = "accessible", quiet=FALSE, memory=9216)
+log4 <- otp_setup(otp = path_otp, dir = otp_path, router="accessible")
+otpcon <- otp_connect()
+routingOptions <- otp_routing_options()
+routingOptions$wheelchair <- TRUE
+routingOptions <- otp_validate_routing_options(routingOptions)
+test_route <- otp_plan(otpcon, #Leicester Square to Camden Town - test non-step-free stations don't work
+                       fromPlace = c(-0.12811, 51.51145),
+                       toPlace = c(-0.142915, 51.53929),
+                       mode = c("WALK", "TRANSIT"),
+                       routeOptions = routingOptions)
+test_route <- otp_plan(otpcon, #High Barnet to Tottenham Court Road - test step-free stations still work
+                       fromPlace = c(-0.1943191, 51.65037),
+                       toPlace = c(-0.130031, 51.51641),
+                       mode = c("WALK", "TRANSIT"),
+                       routeOptions = routingOptions)
+#Add a test for partial accessibility XXX
+tmap_mode("view")
+qtm(test_route %>% filter(route_option == 3), col = "leg_mode")
 
 #To do:
-# - Make directory setup reproducible
-# - Set up OTP for London in general
 # - Set up OTP for London accessible network and check whether it works
+  # - Add pathway between parent and outside?
+  # - Check it still models partial accessibility
 # - Trial query from origin to destination centroids
-# - Then look into distribution of workforce population and check whether it's actually a good variable to use!
-# - Classify stations into fully accessible, partially accessible, etc.
+# - Could use r5r to map time to nearest accessible station vs nearest station in general
+# - Could I consider number of transfers in cumulative opportunities, not just opportunities reached?
+# - For cumulative opportunities, could I also compare with an interchange restriction? More realistic for PwMD, indicates convenience etc.
+
+gtfs <- gtfstools::read_gtfs("final_r5r/gtfs_accessible.zip")
+view(gtfs$stops)
+view(gtfs$pathways)

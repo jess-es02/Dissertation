@@ -22,6 +22,7 @@ library(jsonlite)
 options(java.parameters = "-Xmx2G")
 library(r5r)
 library(igraph)
+library(data.table)
 
 # ------ Build base GTFS network ---------
 
@@ -730,9 +731,38 @@ gtfs$pathways <- pathways_final
 gtfs$stops <- gtfs$stops %>%
   mutate(wheelchair_boarding = if_else(location_type == 0 & is.na(parent_station), 1, NA))
 
-#Set Battersea Park location type to 1 (station) rather than 0 (platform) - for overall classifications
+#Set wheelchair_boarding to 2 for LU stops not mentioned in pathways, and 1 if they are
+pathways_parent <- gtfs$pathways %>%
+  mutate(parent_station = str_extract(pathway_id, "^[^\\-]+"))
+potential_stops <- gtfs$stops %>%
+  filter(is.na(wheelchair_boarding) & location_type == 0)
+potential_stops <- potential_stops %>%
+  mutate(
+    wheelchair_boarding = case_when(
+      parent_station %in% pathways_parent$parent_station ~ 1,
+      !parent_station %in% pathways_parent$parent_station ~ 2,
+      TRUE ~ wheelchair_boarding))
 gtfs$stops <- gtfs$stops %>%
-  mutate(location_type = if_else(stop_id == 'BATRSPK', 1, location_type))
+  rows_update(potential_stops, by = "stop_id")
+
+#And try same logic for parent stations
+parent_stations <- gtfs$stops %>%
+  filter(location_type==1)%>%
+  mutate(wheelchair_boarding = if_else(stop_id %in% pathways_parent$parent_station, 1, 2))
+gtfs$stops <- gtfs$stops %>%
+  rows_update(parent_stations, by = "stop_id")
+
+#Set all trips as wheelchair accessible (stops.txt and pathways.txt will determine if they actually are or not)
+gtfs$trips <- gtfs$trips %>%
+  mutate(wheelchair_accessible = 1L)
+
+#Set all pathways to wheelchair accessible
+gtfs$pathways <- gtfs$pathways %>%
+  mutate(wheelchair_accessible = 1L)
+
+#Change stop entrance/exit logic in case that helps OTP
+gtfs$stops <- gtfs$stops %>%
+  mutate(location_type = if_else(location_type == 3, 2, location_type))
 
 #Check validity
 output_path <- tempfile("validation_result")
@@ -743,9 +773,16 @@ gtfstools::validate_gtfs(gtfs, output_path, validator_path)
 #Export
 gtfs_write(gtfs, folder = "final_r5r", name = "gtfs_accessible")
 
-#Not updating gtfs$trips as I think (hope) I can convey the accessibility information without this
-#Plan is:
+#Set Battersea Park location type to 1 (station) rather than 0 (platform) - for overall classifications
+gtfs$stops <- gtfs$stops %>%
+mutate(location_type = if_else(stop_id == 'BATRSPK', 1, location_type))
+gtfs_write(gtfs, folder = "final_r5r", name = "gtfs_accessibleBAT1")
+
+#Accessibility summary:
   # - Set all non-Underground/Overground stops to be wheelchair accessible in stops.txt (wheelchair_boarding = 1)
-  # - Accessibility for all Underground/Overground stops is determined by considering pathways.txt
+  # - All Underground/Overground stops not mentioned at all in pathways are marked as inaccessible (wheelchair_boarding = 2)
+  # - Other Underground/Overground stops are set to be wheelchair accessible (wheelchair_boarding = 1), even if they are not fully accessible
+    # - Then it is hoped that pathways.txt overrides situations where it is only partially accessible
+  # - All trips are set to wheelchair accessible because all vehicles can accommodate wheelchairs
 
 rm(list=ls())
