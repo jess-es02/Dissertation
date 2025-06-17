@@ -198,19 +198,3 @@ workforce_centroids <- workforce_centroids %>%
   left_join(., working_pop_lsoa, by="id")
 
 rm(lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability, london_lsoas, stop_buffers, stop_buffer_lsoas, stops_on_tube_trips, bbox_combined, bbox_lsoas, bbox_stops, all_stops)
-
-# -------- Basic r5r query -----------
-
-#Set up r5r network
-r5r_core <- setup_r5(data_path = "final_r5r", verbose=TRUE)
-#There are some "invalid turn restriction" errors but nothing too serious
-#Note that Heathrow stops are not reachable by foot, but are by PT
-  #Heathrow workforce centroid is also only reachable by PT
-#Some stops and centroids had to be manually moved to make them reachable via the street/PT network (see above)
-#And obviously note limitations with no elevation data, lack of consideration of road micro-geographies, etc.
-
-#Note that for the LSOAs very far away, detailed_itineraries returns much more realistic outputs than travel_time_matrix
-#Need to consider how this affects the accessibility function
-
-stop_r5(r5r_core)
-rJava::.jgc(R.gc = TRUE)

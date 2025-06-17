@@ -4,7 +4,9 @@
   # - Convert the Traveline dataset for the entirety of London from TransXChange to GTFS
   # - Use TfL topology data to match each NAPTAN ID to its platform ID (for joining with accessibility data)
   # - Merge the resulting object with the Elizabeth Line and Overground GTFS files
+  # - Turn this overall GTFS object into an r5r_core for (non-step-free) routing
   # - Process TfL topology data to create a pathways.txt file reflecting wheelchair accessibility
+  # - Integrate into the GTFS object, creating a file which will reflect step-free accessibility in OTP
 
 #Note that for memory reasons, the final exported GTFS object excludes weekends
 #Also note that the wheelchair accessibility only reflects accessibility to the platform - not necessarily to the train (I could extend this if I have time)
@@ -539,6 +541,22 @@ dir.create("final_r5r")
 gtfs_write(final_gtfs_no_weekends, folder = "final_r5r", name = "gtfs")
 
 rm(final_gtfs, gtfs_lizzie, gtfs_london, gtfs_overground, london_stops, output_path, validator_path, final_gtfs_no_weekends)
+
+# -------- Basic r5r query -----------
+
+#Set up r5r network
+r5r_core <- setup_r5(data_path = "final_r5r", verbose=TRUE)
+#There are some "invalid turn restriction" errors but nothing too serious
+#Note that Heathrow stops are not reachable by foot, but are by PT
+#Heathrow workforce centroid is also only reachable by PT
+#Some stops and centroids had to be manually moved to make them reachable via the street/PT network (see above)
+#And obviously note limitations with no elevation data, lack of consideration of road micro-geographies, etc.
+
+#Note that for the LSOAs very far away, detailed_itineraries returns much more realistic outputs than travel_time_matrix
+#Need to consider how this affects the accessibility function
+
+stop_r5(r5r_core)
+rJava::.jgc(R.gc = TRUE)
 
 # -------- Adding accessibility information -------
 
