@@ -752,13 +752,20 @@ parent_stations <- gtfs$stops %>%
 gtfs$stops <- gtfs$stops %>%
   rows_update(parent_stations, by = "stop_id")
 
+#Set all entrances as wheelchair accessible too?
+gtfs$stops <- gtfs$stops %>%
+  mutate(wheelchair_boarding = if_else(is.na(wheelchair_boarding), 1, wheelchair_boarding))
+
 #Set all trips as wheelchair accessible (stops.txt and pathways.txt will determine if they actually are or not)
 gtfs$trips <- gtfs$trips %>%
   mutate(wheelchair_accessible = 1L)
 
 #Set all pathways to wheelchair accessible
 gtfs$pathways <- gtfs$pathways %>%
-  mutate(wheelchair_accessible = 1L)
+  mutate(wheelchair_accessible = 1L,
+         length=0, 
+         traversal_time = 0,
+         wheelchair_traversal_time = 0)
 
 #Change stop entrance/exit logic in case that helps OTP
 gtfs$stops <- gtfs$stops %>%
@@ -780,9 +787,10 @@ gtfs_write(gtfs, folder = "final_r5r", name = "gtfs_accessibleBAT1")
 
 #Accessibility summary:
   # - Set all non-Underground/Overground stops to be wheelchair accessible in stops.txt (wheelchair_boarding = 1)
-  # - All Underground/Overground stops not mentioned at all in pathways are marked as inaccessible (wheelchair_boarding = 2)
+  # - Set all Overground/Underground entrances as accessible
+  # - All Underground/Overground stops (i.e. platforms) not mentioned at all in pathways are marked as inaccessible (wheelchair_boarding = 2)
   # - Other Underground/Overground stops are set to be wheelchair accessible (wheelchair_boarding = 1), even if they are not fully accessible
-    # - Then it is hoped that pathways.txt overrides situations where it is only partially accessible
-  # - All trips are set to wheelchair accessible because all vehicles can accommodate wheelchairs
+    # - Then pathways.txt overrides situations where it is only partially accessible
+  # - All trips are set to wheelchair accessible because all vehicles can technically accommodate wheelchairs
 
 rm(list=ls())

@@ -212,17 +212,5 @@ r5r_core <- setup_r5(data_path = "final_r5r", verbose=TRUE)
 #Note that for the LSOAs very far away, detailed_itineraries returns much more realistic outputs than travel_time_matrix
 #Need to consider how this affects the accessibility function
 
-#To do:
-# - Look into jobs distribution and autocorrelation
-# - Set up OTP
-# - Accessibility query comparisons
-# - See how long each takes - then add to for loop?
-
-#Basic vis I will need:
-# - public transport network
-# - public transport accessible network
-# - disability distribution
-# - workplace pop dist (autocorrelation?)
-
 stop_r5(r5r_core)
 rJava::.jgc(R.gc = TRUE)

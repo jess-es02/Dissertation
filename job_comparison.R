@@ -100,46 +100,49 @@ dir.create("otp/graphs/accessible", recursive = TRUE)
 
 #Build graphs
 
-# #Standard
+#Standard
 # log1 <- otp_build_graph(otp = path_otp, dir = otp_path, router = "standard", quiet=FALSE, memory=9216)
 # log2 <- otp_setup(otp = path_otp, dir = otp_path, router="standard")
 # otpcon <- otp_connect()
 # test_route <- otp_plan(otpcon, #Leicester Square to Camden Town
-#                       fromPlace = c(-0.12811, 51.51145), 
-#                       toPlace = c(-0.142915, 51.53929), 
+#                       fromPlace = c(-0.12811, 51.51145),
+#                       toPlace = c(-0.142915, 51.53929),
 #                       mode = c("WALK", "TRANSIT"))
 # qtm(test_route%>%filter(route_option==2)) #all looks good
 # otp_stop()
 
-#Wheelchair accessible
-log3 <- otp_build_graph(otp = path_otp, dir = otp_path, router = "accessible", quiet=FALSE, memory=9216)
-log4 <- otp_setup(otp = path_otp, dir = otp_path, router="accessible")
-otpcon <- otp_connect()
-routingOptions <- otp_routing_options()
-routingOptions$wheelchair <- TRUE
-routingOptions <- otp_validate_routing_options(routingOptions)
-test_route <- otp_plan(otpcon, #Leicester Square to Camden Town - test non-step-free stations don't work
-                       fromPlace = c(-0.12811, 51.51145),
-                       toPlace = c(-0.142915, 51.53929),
-                       mode = c("WALK", "TRANSIT"),
-                       routeOptions = routingOptions)
-test_route <- otp_plan(otpcon, #High Barnet to Tottenham Court Road - test step-free stations still work
-                       fromPlace = c(-0.1943191, 51.65037),
-                       toPlace = c(-0.130031, 51.51641),
-                       mode = c("WALK", "TRANSIT"),
-                       routeOptions = routingOptions)
-#Add a test for partial accessibility XXX
-tmap_mode("view")
-qtm(test_route %>% filter(route_option == 3), col = "leg_mode")
+# #Wheelchair accessible
+# log3 <- otp_build_graph(otp = path_otp, dir = otp_path, router = "accessible", quiet=FALSE, memory=9216)
+# log4 <- otp_setup(otp = path_otp, dir = otp_path, router="accessible")
+# otpcon <- otp_connect()
+# routingOptions <- otp_routing_options()
+# routingOptions$wheelchair <- TRUE
+# routingOptions <- otp_validate_routing_options(routingOptions)
+# test_route <- otp_plan(otpcon, #Leicester Square to Camden Town - test non-step-free stations don't work
+#                        fromPlace = c(-0.12811, 51.51145),
+#                        toPlace = c(-0.142915, 51.53929),
+#                        mode = c("WALK", "TRANSIT"),
+#                        routeOptions = routingOptions)
+# test_route <- otp_plan(otpcon, #High Barnet to Tottenham Court Road - test step-free stations still work
+#                        fromPlace = c(-0.1943191, 51.65037),
+#                        toPlace = c(-0.130031, 51.51641),
+#                        mode = c("WALK", "TRANSIT"),
+#                        routeOptions = routingOptions)
+# test_route <- otp_plan(otpcon, #High Barnet to Victoria (change at Euston) - test partially-accessible stations still work
+#                        fromPlace = c(-0.1943191, 51.65037),
+#                        toPlace = c(-0.1439399, 51.49588),
+#                        mode = c("WALK", "TRANSIT"),
+#                        routeOptions = routingOptions)
+# tmap_mode("view")
+# qtm(test_route %>% filter(route_option == 3), col = "leg_mode")
 
 #To do:
-# - Set up OTP for London accessible network and check whether it works
-  # - Add pathway between parent and outside?
-  # - Check it still models partial accessibility
 # - Trial query from origin to destination centroids
 # - Could use r5r to map time to nearest accessible station vs nearest station in general
 # - Could I consider number of transfers in cumulative opportunities, not just opportunities reached?
 # - For cumulative opportunities, could I also compare with an interchange restriction? More realistic for PwMD, indicates convenience etc.
+# - Bivariate Moran's i with vehicle ownership?
+# - Isochrones, not just job access?
 
 gtfs <- gtfstools::read_gtfs("final_r5r/gtfs_accessible.zip")
 view(gtfs$stops)
