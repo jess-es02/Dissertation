@@ -111,7 +111,7 @@ dir.create("otp/graphs/accessible", recursive = TRUE)
 # qtm(test_route%>%filter(route_option==2)) #all looks good
 # otp_stop()
 
-# #Wheelchair accessible
+#Wheelchair accessible
 # log3 <- otp_build_graph(otp = path_otp, dir = otp_path, router = "accessible", quiet=FALSE, memory=9216)
 # log4 <- otp_setup(otp = path_otp, dir = otp_path, router="accessible")
 # otpcon <- otp_connect()
@@ -136,6 +136,62 @@ dir.create("otp/graphs/accessible", recursive = TRUE)
 # tmap_mode("view")
 # qtm(test_route %>% filter(route_option == 3), col = "leg_mode")
 
+#Configure options
+
+#Standard: no wheelchair, walking speed 1.4m/s, no maximum walk
+routingOptionsS <- otp_routing_options()
+routingOptionsS$walkSpeed <- 1.4
+routingOptionsS <- otp_validate_routing_options(routingOptionsS)
+
+#Wheelchair: wheelchair, walking speed 0.43m/s (Sonenblum et al., 2012)
+routingOptionsW <- otp_routing_options()
+routingOptionsW$walkSpeed <- 0.43
+#routingOptionsW$maxWalkDistance <- 1000
+routingOptionsW$wheelchair <- TRUE
+routingOptionsW <- otp_validate_routing_options(routingOptionsW)
+#Max walk distance cannot be set here - return to this if time
+
+#This is all for now, but we could alter speed for electric wheelchairs, for example
+#Or keep speed the same as standard for a ceteris paribus comparison
+#Could also alter walkReluctance, but I am considering what is theoretically possible rather than what is preferable
+#Could add maximum transfers to be more realistic?
+
+# ----- Cumulative opportunities measure -------
+
+#Define origins and destinations
+selected_ids <- head(pop_centroids$id, 5)
+sample_origins <- pop_centroids[pop_centroids$id %in% selected_ids, ]
+sample_destinations <- workforce_centroids[workforce_centroids$id %in% selected_ids, ]
+
+toPlace = sample_destinations[rep(seq(1, nrow(sample_destinations)), times = nrow(sample_destinations)),]
+toPlace <- st_as_sf(toPlace, coords = c("lon", "lat"), crs = 4326) %>%
+  select(id, geometry)
+
+fromPlace = sample_origins[rep(seq(1, nrow(sample_origins)), each  = nrow(sample_origins)),]
+fromPlace <- st_as_sf(fromPlace, coords = c("lon", "lat"), crs = 4326) %>%
+  select(id, geometry)
+
+#Wheelchair
+
+#Load wheelchair object
+log4 <- otp_setup(otp = path_otp, dir = otp_path, router="accessible")
+otpcon <- otp_connect()
+
+test <- otp_plan(otpcon,
+                 fromPlace = fromPlace,
+                 toPlace = toPlace,
+                 fromID = fromPlace$id,
+                 toID = toPlace$id,
+                 get_geometry = FALSE,
+                 distance_balance = TRUE,
+                 mode = c("WALK", "TRANSIT"),
+                 routeOptions = routingOptionsW,
+                 numItineraries = 1,
+                 #ncores = max(round(parallel::detectCores() * 1.25) - 1, 1))
+)
+
+#Would need to set date, time, maxWalkDistance, numItineraries
+
 #To do:
 # - Trial query from origin to destination centroids
 # - Could use r5r to map time to nearest accessible station vs nearest station in general
@@ -143,6 +199,9 @@ dir.create("otp/graphs/accessible", recursive = TRUE)
 # - For cumulative opportunities, could I also compare with an interchange restriction? More realistic for PwMD, indicates convenience etc.
 # - Bivariate Moran's i with vehicle ownership?
 # - Isochrones, not just job access?
+
+# - Configure settings
+# - Run accessibility and isochrones for each
 
 gtfs <- gtfstools::read_gtfs("final_r5r/gtfs_accessible.zip")
 view(gtfs$stops)
