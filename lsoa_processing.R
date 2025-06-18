@@ -6,6 +6,7 @@
     # - We append information on total population, disabled population, and age bands
   # - Prepare destinations: workforce-weighted centroids (derived from OA-level statistics)
     # - We append working population as a proxy for local opportunities
+  # - Create an index (using pct under 5, over 65, and disabled) to indicate presence of groups potentially benefitting from step-free upgrades
 
 library(tidyverse)
 library(janitor)
@@ -198,3 +199,15 @@ workforce_centroids <- workforce_centroids %>%
   left_join(., working_pop_lsoa, by="id")
 
 rm(lsoas, oas, working_pop_lsoa, working_pop_oa, age, disability, london_lsoas, stop_buffers, stop_buffer_lsoas, stops_on_tube_trips, bbox_combined, bbox_lsoas, bbox_stops, all_stops)
+
+# ---- Create pop-centroid step-free benefit index ------
+pop_centroids <- pop_centroids %>%
+  mutate(across(starts_with("pct"), ~ as.numeric(scale(.)), .names = "z_{.col}"))
+
+#Unweighted: average of all three z scores
+pop_centroids <- pop_centroids %>%
+  mutate(step_free_benefit_indexUW = rowMeans(across(c(z_pct_disabled, z_pct_under_5, z_pct_65_plus))))
+
+#Weighted: 0.6 for disabled, 0.2 for under 5 or 65+
+pop_centroids <- pop_centroids %>%
+  mutate(step_free_benefit_indexW = 0.6*z_pct_disabled + 0.2*z_pct_under_5 + 0.2*z_pct_65_plus)
