@@ -214,20 +214,37 @@ ggplot(pivoted, aes(x = type, y = value, fill = type)) +
 rm(pivoted)
 
 #Map - binary of whether fastest station is accessible or not
+
+mapping <- c(
+  "Fully Accessible" = "darkgreen",
+  "Not Fully Accessible" = "red")
+mapping2 <- c(
+  "Fully Accessible" = "darkseagreen",
+  "Not Fully Accessible" = "indianred")
+tube_stations_main <- tube_stations_main %>%
+  mutate(classification2 = if_else(classification != "Fully Accessible", "Not Fully Accessible", classification))
+fastest_time_to_stations <- fastest_time_to_stations %>%
+  mutate(is_fastest_accessible = if_else(is_fastest_accessible == TRUE, "Fully Accessible", "Not Fully Accessible"))
+
 tmap_mode("plot")
 tmap_options(component.autoscale = TRUE)
+tmap_save(
 tm_shape(fastest_time_to_stations) +
   tm_polygons(
     col = "is_fastest_accessible",
-    #style = "fixed",
-    #breaks = breaks,
-    #border.col = "bisque4",
-    title = "Is the Nearest Station Accessible?",
-    #palette = "Peach",
+    palette=mapping,
+    alpha=0.35,
+    title = "Nearest Station Status",
     textNA = ""
   ) +
+  tm_shape(tube_stations_main)+
+  tm_dots(fill = "classification2", 
+          fill.scale = tm_scale_categorical(values = mapping),
+          fill.legend = tm_legend(title = "Station Accessibility"),
+          shape=21,
+          size=0.6)+
   tm_basemap("Esri.OceanBasemap") +
-  tm_title("Distribution of Jobs Across Study LSOAs") +
+  tm_title("Fastest Rail Station by Accessibility Status") +
   tm_compass(type = "8star",
              size = 3,
              position = c(0.9, 0.22)) +
@@ -244,11 +261,13 @@ tm_shape(fastest_time_to_stations) +
     title.size = 1.6,
     legend.text.fontfamily = "Segoe UI",
     legend.title.fontfamily = "Segoe UI Semibold",
-    legend.text.size = 0.7,
-    legend.title.size = 0.8
-  )
+    legend.text.size = 0.8,
+    legend.title.size = 0.9),
+filename = "maps/nearest_station_status.png",
+dpi=300)
 
 #Map ratios
+
 
 #Need to consider the issue that detailed_itineraries provides more realistic travel times than travel_time_matrix
 #Hence some LSOAs having unexpectedly long walks
@@ -256,9 +275,7 @@ tm_shape(fastest_time_to_stations) +
 #Note "fastest" may not actually be in practice - consider issues for PwMD on buses, e.g. no space, ramps
 
 #To do:
-#Redo with Lizzie Line!!
-#Map binary
 #Map ratio
-#Add stations to maps
 #Autocorrelation?
 #Bivariate LISA with number of disabled??
+#Or index of groups that could benefit?
