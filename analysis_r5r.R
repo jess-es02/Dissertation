@@ -5,6 +5,7 @@
     # - For each non-disabled individual, this is simply the nearest station
     # - For PwMD, this is the nearest accessible station
   # - Calculate summary statistics and create maps
+  # - Assess local and global spatial autocorrelation in time ratios
 
 #Beforehand, ensure to run:
   # 1) lsoa_processing.R
@@ -21,6 +22,8 @@ library(extrafont)
 library(RColorBrewer)
 library(tmap)
 library(tmaptools)
+library(rcartocolor)
+library(spdep)
 
 # ---- Accessibility to step-free stations ------
 
@@ -212,6 +215,8 @@ ggplot(pivoted, aes(x = type, y = value, fill = type)) +
     axis.title.x = element_text(margin = margin(t = 10)))
 #Need to note that this is not the full range - upper bound actually extends beyond 200 min
 rm(pivoted)
+#Horizontal equity: still a difference
+#Vertical equity: needs considerable change
 
 #Map - binary of whether fastest station is accessible or not
 
@@ -267,15 +272,267 @@ filename = "maps/nearest_station_status.png",
 dpi=300)
 
 #Map ratios
+#Ceteris paribus
+breaks <- c(1, 1.1, 1.2, 1.3, 1.4, 1.5, 2, 5, 30)
+tmap_save(
+  tm_shape(fastest_time_to_stations) +
+    tm_polygons(
+      col = "ratioCP",
+      style="fixed",
+      breaks=breaks,
+      palette="rd_pu",
+      alpha=0.9,
+      title = "Ratio",
+      textNA = ""
+    ) +
+    tm_shape(tube_stations_main)+
+    tm_dots(fill = "classification2", 
+            fill.scale = tm_scale_categorical(values = mapping),
+            fill.legend = tm_legend(title = "Station Accessibility"),
+            shape=21,
+            size=0.4)+
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Travel Time Ratio: Fastest Station versus Fastest Step-Free Station") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)
+    ) +
+    tm_layout(
+      legend.outside = TRUE,
+      legend.outside.position = "right",
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/nearest_speed_ratio.png",
+  dpi=300)
 
+breaks <- c(1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 50)
+tmap_save(
+  tm_shape(fastest_time_to_stations) +
+    tm_polygons(
+      col = "ratioSLOW",
+      style="fixed",
+      breaks=breaks,
+      palette="rd_pu",
+      alpha=0.9,
+      title = "Ratio",
+      textNA = ""
+    ) +
+    tm_shape(tube_stations_main)+
+    tm_dots(fill = "classification2", 
+            fill.scale = tm_scale_categorical(values = mapping),
+            fill.legend = tm_legend(title = "Station Accessibility"),
+            shape=21,
+            size=0.4)+
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Travel Time Ratio: Fastest Station versus Fastest Step-Free Station, \nSlower Walking Speed") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)
+    ) +
+    tm_layout(
+      legend.outside = TRUE,
+      legend.outside.position = "right",
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/nearest_speed_ratioSLOW.png",
+  dpi=300)
+#Note some ratios tend to be larger in areas with larger LSOAs - likely a bias due to MAUP
+
+# ----- Global spatial autocorrelation -------
+
+#Create spatial weights matrix
+area_nb <- fastest_time_to_stations %>% #Queen's case
+  poly2nb(., queen=T)
+summary(area_nb)
+area.lw <- area_nb %>% #row standardisation
+  nb2listw(., style="W")
+
+#Global Moran's I
+morans_i_global_ratioCP <- fastest_time_to_stations %>%	
+  pull(ratioCP) %>%
+  as.vector() %>%
+  moran.test(., area.lw)
+morans_i_global_ratioSLOW <- fastest_time_to_stations %>%	
+  pull(ratioSLOW) %>%
+  as.vector() %>%
+  moran.test(., area.lw)
+
+morans_i_global_ratioCP
+morans_i_global_ratioSLOW
+
+#Geary's C
+gearys_c_ratioCP <- fastest_time_to_stations %>%
+  pull(ratioCP)%>%
+  as.vector() %>%
+  geary.test(., area.lw)
+gearys_c_ratioSLOW <- fastest_time_to_stations %>%
+  pull(ratioSLOW)%>%
+  as.vector() %>%
+  geary.test(., area.lw)
+
+gearys_c_ratioCP
+gearys_c_ratioSLOW
+
+#Getis Ord
+getis_ord_global_ratioCP <- fastest_time_to_stations %>%
+  pull(ratioCP) %>%
+  as.vector() %>%
+  globalG.test(., area.lw)
+getis_ord_global_ratioSLOW <- fastest_time_to_stations %>%
+  pull(ratioSLOW) %>%
+  as.vector() %>%
+  globalG.test(., area.lw)
+
+getis_ord_global_ratioCP
+getis_ord_global_ratioSLOW
+
+# ----- Local spatial autocorrelation ------
+
+#Local Moran's I
+local_morans_i_ratioCP <- fastest_time_to_stations %>%
+  pull(ratioCP)%>%
+  as.vector()%>%
+  localmoran(., area.lw)%>%
+  as_tibble
+local_morans_i_ratioSLOW <- fastest_time_to_stations %>%
+  pull(ratioSLOW)%>%
+  as.vector()%>%
+  localmoran(., area.lw)%>%
+  as_tibble
+
+#Copy the I- and z scores to the sf:
+fastest_time_to_stations <- fastest_time_to_stations %>%
+  mutate(density_I_ratioCP = as.numeric(local_morans_i_ratioCP$Ii))%>%
+  mutate(density_Iz_ratioCP = as.numeric(local_morans_i_ratioCP$Z.Ii))%>%
+  mutate(density_I_ratioSLOW = as.numeric(local_morans_i_ratioSLOW$Ii))%>%
+  mutate(density_Iz_ratioSLOW= as.numeric(local_morans_i_ratioSLOW$Z.Ii))
+
+#Plot the z scores
+tmap_mode("plot")
+breaks<-c(-1000,-2.58,-1.96,-1.65,1.65,1.96,2.58,1000)
+break_labels <- c("-1000 to -2.58", "-2.58 to -1.96", "-1.96 to -1.65", "-1.65 to 1.65", "1.65 to 1.96", "1.96 to 2.58", "2.58 to 1000")
+fastest_time_to_stations <- fastest_time_to_stations %>%
+  rename('"Standard" Walking Speed' = density_Iz_ratioCP,
+         "Slower Walking Speed" = density_Iz_ratioSLOW)
+
+tmap_save(
+  tm_shape(fastest_time_to_stations) +
+    tm_polygons(
+      fill = c('"Standard" Walking Speed', "Slower Walking Speed"),
+      style="fixed",
+      breaks=breaks,
+      palette=MoranColours,
+      midpoint=NA,
+      fill.free = FALSE,
+      legend.show = FALSE,
+      textNA = ""
+    ) +
+    tm_facets(ncol = 2) +
+    #tm_add_legend(type = "fill", labels = break_labels, col = MoranColours, title="Z Score") +
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Local Moran's I Score, Travel Time Ratios") +
+    tm_layout(
+      legend.outside = TRUE,
+      legend.outside.position = "left",
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.5,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9
+    ),
+  filename = "maps/travel_time_local_morans.png",
+  dpi = 300
+)
+#Combine manually with legend
+
+#Getting old column names back - ChatGPT helped as tidyverse was having issues with it
+names(fastest_time_to_stations)[
+  names(fastest_time_to_stations) == '"Standard" Walking Speed'] <- "density_Iz_ratioCP"
+names(fastest_time_to_stations)[
+  names(fastest_time_to_stations) == "Slower Walking Speed"] <- "density_Iz_ratioSLOW"
+
+#Local Getis Ord Gi*
+Gi_local_density_ratioCP <- fastest_time_to_stations %>%
+  pull(ratioCP)%>%
+  as.vector()%>%
+  localG(., area.lw)
+Gi_local_density_ratioSLOW <- fastest_time_to_stations %>%
+  pull(ratioSLOW)%>%
+  as.vector()%>%
+  localG(., area.lw)
+
+fastest_time_to_stations <- fastest_time_to_stations %>%
+  mutate(density_G_ratioCP = as.numeric(Gi_local_density_ratioCP),
+         density_G_ratioSLOW = as.numeric(Gi_local_density_ratioSLOW))
+
+#Plot the z-scores
+GIColours<- rev(brewer.pal(8, "RdBu"))
+fastest_time_to_stations <- fastest_time_to_stations %>%
+  rename('"Standard" Walking Speed' = density_G_ratioCP,
+         "Slower Walking Speed" = density_G_ratioSLOW)
+
+tmap_save(
+  tm_shape(fastest_time_to_stations) +
+    tm_polygons(
+      fill = c('"Standard" Walking Speed', "Slower Walking Speed"),
+      style="fixed",
+      breaks=breaks,
+      palette=GIColours,
+      midpoint=NA,
+      fill.free = FALSE,
+      legend.show = FALSE,
+      textNA = ""
+    ) +
+    tm_facets(ncol = 2) +
+    #tm_add_legend(type = "fill", labels = break_labels, col = GIColours, title="Z Score") +
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Local Getis Ord Gi* Score, Travel Time Ratios") +
+    tm_layout(
+      legend.outside = TRUE,
+      legend.outside.position = "left",
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.5,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9
+    ),
+  filename = "maps/travel_time_local_getis.png",
+  dpi = 300
+)
+#Combine manually with legend
+
+# ------ Bivariate Spatial Autocorrelaton ------
+
+#To do:
+# - Map trend
+# - Compare to TfL list?
 
 #Need to consider the issue that detailed_itineraries provides more realistic travel times than travel_time_matrix
 #Hence some LSOAs having unexpectedly long walks
 
 #Note "fastest" may not actually be in practice - consider issues for PwMD on buses, e.g. no space, ramps
 
-#To do:
-#Map ratio
-#Autocorrelation?
-#Bivariate LISA with number of disabled??
-#Or index of groups that could benefit?
+#To ask Duncan:
+  # - Do I need different colour schemes on ratio maps?

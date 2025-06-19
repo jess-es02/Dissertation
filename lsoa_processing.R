@@ -14,6 +14,10 @@ options(java.parameters = "-Xmx2G")
 library(r5r)
 library(gtfstools)
 library(sf)
+library(cols4all)
+library(tmap)
+library(tmaptools)
+library(extrafont)
 
 gtfs <- gtfstools::read_gtfs("final_r5r/gtfs.zip")
 summary(gtfs)
@@ -211,3 +215,46 @@ pop_centroids <- pop_centroids %>%
 #Weighted: 0.6 for disabled, 0.2 for under 5 or 65+
 pop_centroids <- pop_centroids %>%
   mutate(step_free_benefit_indexW = 0.6*z_pct_disabled + 0.2*z_pct_under_5 + 0.2*z_pct_65_plus)
+
+#Map these
+lsoa_attributes <- study_lsoas %>%
+  left_join(., pop_centroids, by=c("lsoa21cd" = "id"))%>%
+  select(lsoa21cd, step_free_benefit_indexUW, step_free_benefit_indexW, geometry)%>%
+  rename("Unweighted Benefit Index" = step_free_benefit_indexUW,
+         "Weighted Benefit Index" = step_free_benefit_indexW)
+
+breaks <- c(-3, -2, -1, 0, 1, 2, 3, 4)
+palette_colors <- c4a("bu_wh_rd", n = length(breaks) - 1)
+break_labels <- c("-3 to -2", "-2 to -1", "-1 to 0", "0 to 1", "1 to 2", "2 to 3", "3 to 4")
+
+tmap_save(
+  tm_shape(lsoa_attributes) +
+    tm_polygons(
+      fill = c("Unweighted Benefit Index", "Weighted Benefit Index"),
+      palette = "bu_wh_rd",
+      breaks = breaks,
+      fill.legend = tm_legend(title = ""),
+      fill.free = FALSE,
+      legend.show = FALSE,
+      textNA = ""
+    ) +
+    tm_facets(ncol = 2) +
+    #tm_add_legend(type = "fill", labels = break_labels, col = palette_colors) +
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Distribution of Populations in Need of Step-Free Access") +
+    tm_layout(
+      legend.outside = TRUE,
+      legend.outside.position = "left",
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.5,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9
+    ),
+  filename = "maps/population_indices.png",
+  dpi = 300
+)
+#Might have to manually combine the legend in the document
+
+rm(lsoa_attributes, break_labels, breaks, legend_labels)

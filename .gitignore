@@ -17,3 +17,6 @@ otp/
 
 #qgis
 data_vis.qgz
+
+#legend maps for formatting
+maps/*LEGEND.png
