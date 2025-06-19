@@ -5,10 +5,14 @@
   # - Map stations and the study area
   # - Find some general summary statistics on station accessibility type
 
-# Other maps are located in:
+# Note that other maps are located in other files:
 # 1) job_comparison
   # - Job distribution
-  # - Job distribution LISA
+# 2) analysis_r5r
+  # - Binary of nearest station
+  # - Accessibility ratio (CP and slower walking speed)
+  # - Local spatial autocorrelation
+  # - Bivariate LISA
 
 library(tidyverse)
 library(sf)
@@ -22,7 +26,7 @@ library(extrafont)
 gtfs <- gtfstools::read_gtfs("final_r5r/gtfs_accessibleBAT1.zip")
 summary(gtfs)
 
-# ----- Stop accessibility classification --------
+# ----- Stop classification --------
 
 #For visualising the network, we want to classify stops as fully, partially, or not accessible
 
@@ -86,6 +90,33 @@ tube_stations_main <- tube_stations_main %>%
   mutate(classification = if_else(stop_id == 'BATRSPK', 'Inaccessible', classification))
 
 rm(all_edges, components, connectivity_results, edges, G, station_groups, tube_stops)
+
+#Add stations TfL is considering for upgrades
+#https://tfl.gov.uk/travel-information/improvements-and-projects/step-free-access
+#https://tfl.gov.uk/info-for/media/press-releases/2024/august/tfl-confirms-the-next-12-tube-stations-to-be-prioritised-for-step-free-access
+
+ongoing_work <- c("940GZZLUALP", "940GZZLUASG", "940GZZLUEAE", "940GZZLUNAN", "910GWHMDSTD", "940GZZLUNHT", "940GZZLUCND", "940GZZLULYN", "910GSURREYQ")
+upgrades_stalled <- c("910GBRBY", "910GHAKNYNM", "910GPCKHMRY", "HUBSVS")
+under_evaluation <- c("940GZZLUCXY", "940GZZLUEFY", "940GZZLUNDN", "940GZZLUNOW", "940GZZLUTNG", "940GZZLUCSD", "940GZZLUTBY")
+tube_stations_main <- tube_stations_main %>%
+  mutate(upgrade_status = case_when(
+    stop_id %in% ongoing_work ~ "Project Underway",
+    stop_id %in% under_evaluation ~ "Under Evaluation",
+    stop_id %in% upgrades_stalled ~ "Project Stalled",
+    classification == "Fully Accessible" ~ "Already Accessible",
+    TRUE ~ "No Plans"))
+rm(ongoing_work, under_evaluation, upgrades_stalled)
+
+#Join to fare zone data
+tfl_fare_zones <- read_csv("data/tfl_station_data_detailed/Stations.csv")%>%
+  clean_names()%>%
+  select(unique_id, fare_zones)
+tube_stations_main <- tube_stations_main %>%
+  left_join(tfl_fare_zones, by=c("stop_id" = "unique_id"))%>%
+  mutate(fare_zones = if_else(stop_id == 'BATRSPK', "2", fare_zones))
+rm(tfl_fare_zones)
+
+# ----- Plot classifications -----
 
 #Load GLA boundary for map
 boundary <- st_read("data/London_GLA_Boundary.shp")%>%
@@ -259,7 +290,56 @@ tmap_save(
   filename = "maps/study_area_station_classified.png",
   dpi=300)
 
+# ----- Map Upgrade Plans -------
+mapping <- c("Project Underway" = "#9f13eb", 
+             "Project Stalled" = "#f5b642",
+             "Under Evaluation" = "#e0e33b", 
+             "No Plans" = "#d41e11", 
+             "Already Accessible" = "#f0f0f0")
+
+#Turn column to a factor for plotting
+tube_stations_main <- tube_stations_main %>%
+  mutate(upgrade_status = factor(
+    upgrade_status,
+    levels = c("Project Underway", "Project Stalled", "Under Evaluation", "No Plans", "Already Accessible")))
+
+tmap_save(
+  tm_shape(study_lsoas) +
+    tm_polygons(col = "cadetblue", 
+                alpha=0.2,
+                border.col = "bisque4") +
+    tm_shape(tube_stations_main) +
+    tm_dots(fill = "upgrade_status", 
+            fill.scale = tm_scale_categorical(values = mapping),
+            fill.legend = tm_legend(title = "Upgrade Status"),
+            shape=21,
+            size=0.6) +
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Stations by TfL Step-Free Upgrade Status") +
+    tm_compass(type = "8star", 
+               size = 3, 
+               position = c(0.9, 0.22)) +
+    tm_scalebar(position = c(0.82, 0.08), 
+                text.size = 0.7, 
+                breaks = c(0, 5, 10))+
+    tm_layout(legend.position = c("left", "bottom"), 
+              legend.bg.color="white",
+              title.fontfamily = "Segoe UI Semibold",
+              title.size = 1.6,
+              legend.text.fontfamily = "Segoe UI",
+              legend.title.fontfamily = "Segoe UI Semibold",
+              legend.text.size = 0.9,   
+              legend.title.size = 1),
+  filename = "maps/tfl_upgrade_plans.png",
+  dpi=300)
+rm(mapping)
+
 # ------- Station Classification Summary Statistics ------
+
+#Upgrades by fare zone
+tube_stations_main %>% filter(upgrade_status=="Project Underway") %>% select(fare_zones)
+tube_stations_main %>% filter(upgrade_status=="Project Stalled") %>% select(fare_zones)
+tube_stations_main %>% filter(upgrade_status=="Under Evaluation") %>% select(fare_zones)
 
 #Work out split by line
 gtfs_stops <- gtfs$stops %>%

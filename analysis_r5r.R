@@ -430,6 +430,7 @@ fastest_time_to_stations <- fastest_time_to_stations %>%
 #Plot the z scores
 tmap_mode("plot")
 breaks<-c(-1000,-2.58,-1.96,-1.65,1.65,1.96,2.58,1000)
+MoranColours<- rev(brewer.pal(8, "RdGy"))
 break_labels <- c("-1000 to -2.58", "-2.58 to -1.96", "-1.96 to -1.65", "-1.65 to 1.65", "1.65 to 1.96", "1.96 to 2.58", "2.58 to 1000")
 fastest_time_to_stations <- fastest_time_to_stations %>%
   rename('"Standard" Walking Speed' = density_Iz_ratioCP,
@@ -458,6 +459,7 @@ tmap_save(
       title.size = 1.5,
       legend.text.fontfamily = "Segoe UI",
       legend.title.fontfamily = "Segoe UI Semibold",
+      panel.label.fontfamily = "Segoe UI Semibold",
       legend.text.size = 0.8,
       legend.title.size = 0.9
     ),
@@ -492,6 +494,12 @@ fastest_time_to_stations <- fastest_time_to_stations %>%
   rename('"Standard" Walking Speed' = density_G_ratioCP,
          "Slower Walking Speed" = density_G_ratioSLOW)
 
+names(fastest_time_to_stations)[
+  names(fastest_time_to_stations) == "density_G_ratioCP"] <- '"Standard" Walking Speed'
+names(fastest_time_to_stations)[
+  names(fastest_time_to_stations) == "density_G_ratioSLOW"] <- "Slower Walking Speed"
+
+
 tmap_save(
   tm_shape(fastest_time_to_stations) +
     tm_polygons(
@@ -515,6 +523,7 @@ tmap_save(
       title.size = 1.5,
       legend.text.fontfamily = "Segoe UI",
       legend.title.fontfamily = "Segoe UI Semibold",
+      panel.label.fontfamily = "Segoe UI Semibold",
       legend.text.size = 0.8,
       legend.title.size = 0.9
     ),
@@ -523,16 +532,96 @@ tmap_save(
 )
 #Combine manually with legend
 
+names(fastest_time_to_stations)[
+  names(fastest_time_to_stations) == '"Standard" Walking Speed'] <- "density_G_ratioCP"
+names(fastest_time_to_stations)[
+  names(fastest_time_to_stations) == "Slower Walking Speed"] <- "density_G_ratioSLOW"
+
 # ------ Bivariate Spatial Autocorrelaton ------
 
+#Join benefit index
+fastest_time_to_stations <- fastest_time_to_stations %>%
+  left_join(., (pop_centroids %>% select(id, step_free_benefit_indexW)), by = c("lsoa21cd" = "id"))
+
+set.seed(10)
+bv_moranCP <- localmoran_bv(fastest_time_to_stations$step_free_benefit_indexW, fastest_time_to_stations$ratioCP, area.lw, nsim = 999)
+bv_moranSLOW <- localmoran_bv(fastest_time_to_stations$step_free_benefit_indexW, fastest_time_to_stations$ratioSLOW, area.lw, nsim = 999)
+
+
+fastest_time_to_stations$hs_CP <- hotspot(bv_moranCP, Prname="Pr(folded) Sim", cutoff=0.05,
+                       quadrant.type="pysal", p.adjust="none")
+fastest_time_to_stations$hs_SLOW <- hotspot(bv_moranSLOW, Prname="Pr(folded) Sim", cutoff=0.05,
+                                          quadrant.type="pysal", p.adjust="none")
+
+fastest_time_to_stations <- fastest_time_to_stations %>%
+  mutate(hs_CP = if_else(is.na(hs_CP), "Not Significant", hs_CP),
+         hs_SLOW = if_else(is.na(hs_SLOW), "Not Significant", hs_SLOW))%>%
+  rename('"Standard" Walking Speed' = hs_CP,
+         "Slower Walking Speed" = hs_SLOW)
+
+bivariate_cols <- c("High-High" = "#d7191c", "Low-Low" = "#2c7bb6", "High-Low" = "#ffdd94", "Low-High" = "#abd9e9", "Not Significant" = "#f0f0f0")
+labels <- c("High-High", "Low-Low", "High-Low", "Low-High", "Not Significant")
+
+tmap_save(
+  tm_shape(fastest_time_to_stations) +
+    tm_polygons(
+      fill = c('"Standard" Walking Speed', "Slower Walking Speed"),
+      palette=bivariate_cols,
+      midpoint=NA,
+      fill.free = FALSE,
+      legend.show = FALSE,
+      textNA = ""
+    ) +
+    tm_facets(nrow = 2) +
+    #tm_add_legend(type = "fill", labels = labels, col = bivariate_cols, title="Classification") +
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("In-Need Population Against Travel Time Ratio") +
+    tm_layout(
+      legend.outside = TRUE,
+      legend.outside.position = "left",
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      panel.label.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9
+    ),
+  filename = "maps/time_bivariate_morans_i.png",
+  dpi = 300
+)
+
+names(fastest_time_to_stations)[
+  names(fastest_time_to_stations) == "\"Standard\" Walking Speed"] <- "hs_CP"
+names(fastest_time_to_stations)[
+  names(fastest_time_to_stations) == "Slower Walking Speed"] <- "hs_SLOW"
+
+# ---- Overlaps with stations ------
+
+#Extract high-high areas
+HH_CP <- fastest_time_to_stations %>% filter(hs_CP == "High-High")
+HH_SLOW <- fastest_time_to_stations %>% filter(hs_SLOW == "High-High")
+
+tmap_mode("view")
+tm_shape(HH_SLOW)+
+  tm_polygons()+
+  tm_shape(tube_stations_main %>% filter(classification != "Fully Accessible"))+
+  tm_dots(col="upgrade_status", palette="Dark2")
+#How to choose? Lots of stations are close by but not in the HH areas
+#Could do a buffer?
+
 #To do:
-# - Map trend
+# - Identify overlaps with inaccessible stations
 # - Compare to TfL list?
+# - Go back to summary stats
 
 #Need to consider the issue that detailed_itineraries provides more realistic travel times than travel_time_matrix
 #Hence some LSOAs having unexpectedly long walks
 
 #Note "fastest" may not actually be in practice - consider issues for PwMD on buses, e.g. no space, ramps
+#Or closest accessible may not actually be ideal - e.g. further away from Zone 1
 
 #To ask Duncan:
   # - Do I need different colour schemes on ratio maps?
+  # - Bivariate Moran's I - which should be lagged?
+  # - Choosing priority stations based on HH overlaps?

@@ -232,29 +232,30 @@ tmap_save(
     tm_polygons(
       fill = c("Unweighted Benefit Index", "Weighted Benefit Index"),
       palette = "bu_wh_rd",
+      midpoint=0,
       breaks = breaks,
       fill.legend = tm_legend(title = ""),
       fill.free = FALSE,
       legend.show = FALSE,
       textNA = ""
     ) +
-    tm_facets(ncol = 2) +
-    #tm_add_legend(type = "fill", labels = break_labels, col = palette_colors) +
+    tm_facets(nrow = 2) +
+    tm_add_legend(type = "fill", title="Index", labels = break_labels, col = palette_colors) +
     tm_basemap("Esri.OceanBasemap") +
-    tm_title("Distribution of Populations in Need of Step-Free Access") +
+    tm_title("Population in Need of Step-Free Access") +
     tm_layout(
       legend.outside = TRUE,
       legend.outside.position = "left",
       title.fontfamily = "Segoe UI Semibold",
-      title.size = 1.5,
+      title.size = 1.4,
       legend.text.fontfamily = "Segoe UI",
       legend.title.fontfamily = "Segoe UI Semibold",
+      panel.label.fontfamily = "Segoe UI Semibold",
       legend.text.size = 0.8,
       legend.title.size = 0.9
     ),
   filename = "maps/population_indices.png",
   dpi = 300
 )
-#Might have to manually combine the legend in the document
 
 rm(lsoa_attributes, break_labels, breaks, legend_labels)
