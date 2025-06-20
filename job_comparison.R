@@ -10,7 +10,7 @@ library(tidyverse)
 # ------- Job EDA ---------
 
 #First, let's examine the distribution of jobs as opportunities
-#lsoa_processing should already have been run
+#lsoa_processing and maps_summary_stats.R should already have been run
 
 #Join workforce population to LSOA sf, get jobs per km^2
 study_lsoas_work <- study_lsoas %>%
@@ -28,10 +28,13 @@ tmap_save(
     tm_polygons(col = "jobs_per_km2",
                 style="fixed",
                 breaks=breaks,
-                border.col = "bisque4",
+                #border.col = "bisque4",
+                border.alpha = 0,
                 title = "Workers per km\u00B2",
                 palette="Peach",
                 textNA = "") +
+    tm_shape(boroughs)+
+    tm_polygons(alpha=0, fill=NA)+
     tm_basemap("Esri.OceanBasemap") +
     tm_title("Distribution of Jobs Across Study LSOAs") +
     tm_compass(type = "8star", 

@@ -178,6 +178,23 @@ fastest_time_to_stations <- fastest_time_to_stations %>%
 summary(fastest_time_to_stations$diffCP)
 summary(fastest_time_to_stations$diffSLOW)
 
+#Find the average difference, weighted by number of disabled people
+calculations <- pop_centroids %>%
+  select(id, total_disabled)%>%
+  left_join(fastest_time_to_stations, by=c("id" = "lsoa21cd"))%>%
+  mutate(diffCP = mean_accessible_stationCP-mean_fastest_station,
+         diffSLOW = mean_accessible_stationSLOW-mean_fastest_station)
+calculations <- calculations %>%
+  mutate(diffCPmultiplied = diffCP * total_disabled,
+         diffSLOWmultiplied = diffSLOW * total_disabled)
+total_disabled <- sum(calculations$total_disabled)
+avg_diffCP <- sum(calculations$diffCPmultiplied)/total_disabled
+avg_diffSLOW <- sum(calculations$diffSLOWmultiplied)/total_disabled
+print(avg_diffCP)
+print(avg_diffSLOW)
+#So bulk of difference is predicted to come from diff walking speeds
+#Makes sense: lots of stations in central London so lots of choice, and stops tend to be accessible at the end of lines on the periphery
+
 # ---- Display results -----
 
 #Violin plot of time distributions
@@ -239,15 +256,15 @@ tm_shape(fastest_time_to_stations) +
     col = "is_fastest_accessible",
     palette=mapping,
     alpha=0.35,
-    title = "Nearest Station Status",
-    textNA = ""
+    title = "Fastest Station Status",
+    textNA = "",
   ) +
   tm_shape(tube_stations_main)+
   tm_dots(fill = "classification2", 
           fill.scale = tm_scale_categorical(values = mapping),
           fill.legend = tm_legend(title = "Station Accessibility"),
           shape=21,
-          size=0.6)+
+          size=0.4)+
   tm_basemap("Esri.OceanBasemap") +
   tm_title("Fastest Rail Station by Accessibility Status") +
   tm_compass(type = "8star",
@@ -271,6 +288,41 @@ tm_shape(fastest_time_to_stations) +
 filename = "maps/nearest_station_status.png",
 dpi=300)
 
+tmap_save(
+  tm_shape(fastest_time_to_stations) +
+    tm_polygons(
+      col = "is_fastest_accessible",
+      palette=mapping,
+      alpha=0.5,
+      title = "Fastest Station Status",
+      textNA = "",
+      border.alpha=0
+    ) +
+    tm_shape(boroughs)+
+    tm_polygons(fill=NA, alpha=0, lwd=1.5)+
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Fastest Rail Station by Accessibility Status") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)
+    ) +
+    tm_layout(
+      legend.position = c(0.01, 0.17),
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.6,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/nearest_station_statusNODOTS.png",
+  dpi=300)
+
 #Map ratios
 #Ceteris paribus
 breaks <- c(1, 1.1, 1.2, 1.3, 1.4, 1.5, 2, 5, 30)
@@ -283,15 +335,18 @@ tmap_save(
       palette="rd_pu",
       alpha=0.9,
       title = "Ratio",
-      textNA = ""
+      textNA = "",
+      border.alpha=0
     ) +
-    tm_shape(tube_stations_main)+
-    tm_dots(fill = "classification2", 
-            fill.scale = tm_scale_categorical(values = mapping),
-            fill.legend = tm_legend(title = "Station Accessibility"),
-            shape=21,
-            size=0.4)+
-    tm_basemap("Esri.OceanBasemap") +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    # tm_shape(tube_stations_main)+
+    # tm_dots(fill = "classification2", 
+    #         fill.scale = tm_scale_categorical(values = mapping),
+    #         fill.legend = tm_legend(title = "Station Accessibility"),
+    #         shape=21,
+    #         size=0.4)+
+    #tm_basemap("Esri.OceanBasemap") +
     tm_title("Travel Time Ratio: Fastest Station versus Fastest Step-Free Station") +
     tm_compass(type = "8star",
                size = 3,
@@ -302,6 +357,7 @@ tmap_save(
       breaks = c(0, 5, 10)
     ) +
     tm_layout(
+      bg.color = "grey80",
       legend.outside = TRUE,
       legend.outside.position = "right",
       legend.bg.color = "white",
@@ -325,15 +381,18 @@ tmap_save(
       palette="rd_pu",
       alpha=0.9,
       title = "Ratio",
-      textNA = ""
+      textNA = "",
+      border.alpha=0
     ) +
-    tm_shape(tube_stations_main)+
-    tm_dots(fill = "classification2", 
-            fill.scale = tm_scale_categorical(values = mapping),
-            fill.legend = tm_legend(title = "Station Accessibility"),
-            shape=21,
-            size=0.4)+
-    tm_basemap("Esri.OceanBasemap") +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    # tm_shape(tube_stations_main)+
+    # tm_dots(fill = "classification2", 
+    #         fill.scale = tm_scale_categorical(values = mapping),
+    #         fill.legend = tm_legend(title = "Station Accessibility"),
+    #         shape=21,
+    #         size=0.4)+
+    # tm_basemap("Esri.OceanBasemap") +
     tm_title("Travel Time Ratio: Fastest Station versus Fastest Step-Free Station, \nSlower Walking Speed") +
     tm_compass(type = "8star",
                size = 3,
@@ -344,6 +403,7 @@ tmap_save(
       breaks = c(0, 5, 10)
     ) +
     tm_layout(
+      bg.color = "grey80",
       legend.outside = TRUE,
       legend.outside.position = "right",
       legend.bg.color = "white",
@@ -446,11 +506,14 @@ tmap_save(
       midpoint=NA,
       fill.free = FALSE,
       legend.show = FALSE,
-      textNA = ""
+      textNA = "",
+      border.alpha=0
     ) +
     tm_facets(ncol = 2) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
     #tm_add_legend(type = "fill", labels = break_labels, col = MoranColours, title="Z Score") +
-    tm_basemap("Esri.OceanBasemap") +
+    #tm_basemap("Esri.OceanBasemap") +
     tm_title("Local Moran's I Score, Travel Time Ratios") +
     tm_layout(
       legend.outside = TRUE,
@@ -510,11 +573,14 @@ tmap_save(
       midpoint=NA,
       fill.free = FALSE,
       legend.show = FALSE,
-      textNA = ""
+      textNA = "",
+      border.alpha=0
     ) +
     tm_facets(ncol = 2) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
     #tm_add_legend(type = "fill", labels = break_labels, col = GIColours, title="Z Score") +
-    tm_basemap("Esri.OceanBasemap") +
+    #tm_basemap("Esri.OceanBasemap") +
     tm_title("Local Getis Ord Gi* Score, Travel Time Ratios") +
     tm_layout(
       legend.outside = TRUE,
@@ -543,6 +609,12 @@ names(fastest_time_to_stations)[
 fastest_time_to_stations <- fastest_time_to_stations %>%
   left_join(., (pop_centroids %>% select(id, step_free_benefit_indexW)), by = c("lsoa21cd" = "id"))
 
+#Find association (not accounting for autocorrelation)
+cor.test(fastest_time_to_stations$ratioCP, fastest_time_to_stations$step_free_benefit_indexW)
+cor.test(fastest_time_to_stations$ratioSLOW, fastest_time_to_stations$step_free_benefit_indexW)
+#Weak negative linear association (statistically significant)
+
+#Bivariate LISA
 set.seed(10)
 bv_moranCP <- localmoran_bv(fastest_time_to_stations$step_free_benefit_indexW, fastest_time_to_stations$ratioCP, area.lw, nsim = 999)
 bv_moranSLOW <- localmoran_bv(fastest_time_to_stations$step_free_benefit_indexW, fastest_time_to_stations$ratioSLOW, area.lw, nsim = 999)
@@ -570,13 +642,17 @@ tmap_save(
       midpoint=NA,
       fill.free = FALSE,
       legend.show = FALSE,
-      textNA = ""
+      textNA = "",
+      border.alpha=0
     ) +
     tm_facets(nrow = 2) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
     #tm_add_legend(type = "fill", labels = labels, col = bivariate_cols, title="Classification") +
-    tm_basemap("Esri.OceanBasemap") +
+    #tm_basemap("Esri.OceanBasemap") +
     tm_title("In-Need Population Against Travel Time Ratio") +
     tm_layout(
+      bg.color = "grey70",
       legend.outside = TRUE,
       legend.outside.position = "left",
       title.fontfamily = "Segoe UI Semibold",
@@ -611,17 +687,17 @@ tm_shape(HH_SLOW)+
 #Could do a buffer?
 
 #To do:
+# - Extra r5r scenarios - no interchanges? Walking only?
+  # - Considering whether the bus network is the thing mitigating the disparity (context of LA cuts)
+  # - What does this mean contextually during a time of cuts?
 # - Identify overlaps with inaccessible stations
-# - Compare to TfL list?
-# - Go back to summary stats
+  # - Compare to TfL list?
+  # - Could I add vehicle ownership as a factor in the index?
+# - RUN OTP DIRECTLY IN JAVA!!
+  # - Or a for-loop, but unlikely to run on time
 
 #Need to consider the issue that detailed_itineraries provides more realistic travel times than travel_time_matrix
 #Hence some LSOAs having unexpectedly long walks
 
 #Note "fastest" may not actually be in practice - consider issues for PwMD on buses, e.g. no space, ramps
 #Or closest accessible may not actually be ideal - e.g. further away from Zone 1
-
-#To ask Duncan:
-  # - Do I need different colour schemes on ratio maps?
-  # - Bivariate Moran's I - which should be lagged?
-  # - Choosing priority stations based on HH overlaps?

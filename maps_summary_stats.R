@@ -22,6 +22,7 @@ library(tmaptools)
 library(maptiles)
 library(igraph)
 library(extrafont)
+library(ggplot2)
 
 gtfs <- gtfstools::read_gtfs("final_r5r/gtfs_accessibleBAT1.zip")
 summary(gtfs)
@@ -336,12 +337,12 @@ rm(mapping)
 
 # ------- Station Classification Summary Statistics ------
 
-#Upgrades by fare zone
+#1) Upgrades by fare zone
 tube_stations_main %>% filter(upgrade_status=="Project Underway") %>% select(fare_zones)
 tube_stations_main %>% filter(upgrade_status=="Project Stalled") %>% select(fare_zones)
 tube_stations_main %>% filter(upgrade_status=="Under Evaluation") %>% select(fare_zones)
 
-#Work out split by line
+#2) Work out accessibility split by line
 gtfs_stops <- gtfs$stops %>%
   mutate(parent_station = na_if(parent_station, "")) %>%
   filter(location_type == 0 & !is.na(parent_station))
@@ -355,5 +356,42 @@ gtfs_stops <- gtfs_stops %>%
 gtfs_stops <- gtfs_stops %>%
   mutate(
     all_lines = str_extract(stop_id, "[^-]+$"),
-    lines = str_split(all_lines, "\\|"))
-#XXX come back to this
+    lines = str_split(all_lines, "\\|"))%>%
+  unnest(lines) %>% #if multiple lines, add new row
+  distinct(parent_station, lines, .keep_all = TRUE)%>%
+  select(stop_name.x, lines, classification, upgrade_status, geometry)%>%
+  rename("stop_name" = stop_name.x)
+
+gtfs_stops <- gtfs_stops %>%
+  mutate(lines = str_to_title(lines))
+
+gtfs_stops <- gtfs_stops %>%
+  filter(lines != "Rail")
+  
+#Create stacked bar chart
+mapping <- c(
+  "Fully Accessible" = "darkgreen",
+  "Partially Accessible" = "gold",
+  "Inaccessible" = "red")
+gtfs_stops <- gtfs_stops %>%
+  mutate(classification = factor(classification, levels = c(
+    "Inaccessible",
+    "Partially Accessible",
+    "Fully Accessible")))
+ggplot(gtfs_stops, aes(x = lines, fill = classification)) +
+  geom_bar(position = "stack") +
+  scale_fill_manual(values = mapping) +
+  labs(
+    x = "Line",
+    y = "Number of Stops",
+    fill = "Accessibility Status",
+    title = "Station Accessibility Status by Line") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
+        axis.title = element_text(family = "Segoe UI Semibold", size=11),
+        axis.text = element_text(family = "Segoe UI", size=9),
+        legend.title = element_text(family = "Segoe UI Semibold", size=11),
+        legend.text = element_text(family = "Segoe UI", size=9))
+#Change font, title alignment
+#Add note that it's about overall station classification

@@ -223,6 +223,9 @@ lsoa_attributes <- study_lsoas %>%
   rename("Unweighted Benefit Index" = step_free_benefit_indexUW,
          "Weighted Benefit Index" = step_free_benefit_indexW)
 
+boroughs <- st_read("data/London_Borough_Excluding_MHW.shp")%>%
+  clean_names()
+
 breaks <- c(-3, -2, -1, 0, 1, 2, 3, 4)
 palette_colors <- c4a("bu_wh_rd", n = length(breaks) - 1)
 break_labels <- c("-3 to -2", "-2 to -1", "-1 to 0", "0 to 1", "1 to 2", "2 to 3", "3 to 4")
@@ -237,8 +240,12 @@ tmap_save(
       fill.legend = tm_legend(title = ""),
       fill.free = FALSE,
       legend.show = FALSE,
-      textNA = ""
+      textNA = "",
+      lwd=0,
+      border.alpha = 0
     ) +
+    tm_shape(boroughs)+
+    tm_polygons(fill=NA, alpha=0)+
     tm_facets(nrow = 2) +
     tm_add_legend(type = "fill", title="Index", labels = break_labels, col = palette_colors) +
     tm_basemap("Esri.OceanBasemap") +
