@@ -393,5 +393,4 @@ ggplot(gtfs_stops, aes(x = lines, fill = classification)) +
         axis.text = element_text(family = "Segoe UI", size=9),
         legend.title = element_text(family = "Segoe UI Semibold", size=11),
         legend.text = element_text(family = "Segoe UI", size=9))
-#Change font, title alignment
 #Add note that it's about overall station classification

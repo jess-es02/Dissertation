@@ -24,6 +24,8 @@ library(tmap)
 library(tmaptools)
 library(rcartocolor)
 library(spdep)
+library(biscale)
+library(cowplot)
 
 # ---- Accessibility to step-free stations ------
 
@@ -58,7 +60,8 @@ departure_times <- as.POSIXct(c(
 get_fastest_station <- function(origins,
                                 destinations, 
                                 walk_speed = 1.4, 
-                                max_trip_duration = 180) {
+                                max_trip_duration = 180,
+                                mode = c("WALK", "TRANSIT")) {
   #Get travel times for each departure time, and combine
   ttm_combined <- departure_times %>%
     lapply(function(dt) {
@@ -66,7 +69,7 @@ get_fastest_station <- function(origins,
         r5r_core,
         origins = origins,
         destinations = destinations,
-        mode = c("WALK", "TRANSIT"),
+        mode = mode,
         departure_datetime = dt,
         walk_speed = walk_speed,
         max_trip_duration = max_trip_duration,
@@ -99,6 +102,13 @@ fastest_station2 <- get_fastest_station(
 fastest_station <- rbind(fastest_station, fastest_station2)
 summary(fastest_station$mean_travel_time)
 
+#Calculate fastest station, walking only
+fastest_stationWALK <- get_fastest_station(origins = pop_centroids, destinations = all_stations, mode=c("WALK"))
+missing_centroids <- pop_centroids %>%
+  filter(!id %in% fastest_stationWALK$from_id)
+fastest_station2 <- get_fastest_station(origins = missing_centroids, destinations = all_stations, mode=c("WALK"), max_trip_duration=800)
+fastest_stationWALK <- rbind(fastest_stationWALK, fastest_station2)
+
 r5r::stop_r5(r5r_core)
 rJava::.jgc(R.gc = TRUE)
 
@@ -129,7 +139,7 @@ missing_centroids <- pop_centroids %>%
   filter(!id %in% fastest_accessible_station1$from_id)
 fastest_station2 <- get_fastest_station(
   origins = missing_centroids,
-  destinations = all_stations,
+  destinations = accessible_stations,
   max_trip_duration=500)
 fastest_accessible_station1 <- rbind(fastest_accessible_station1, fastest_station2)
 summary(fastest_accessible_station1$mean_travel_time)
@@ -141,11 +151,34 @@ missing_centroids <- pop_centroids %>%
   filter(!id %in% fastest_accessible_station2$from_id)
 fastest_station2 <- get_fastest_station(
   origins = missing_centroids,
-  destinations = all_stations,
+  destinations = accessible_stations,
   walk_speed = 0.43,
   max_trip_duration=1000)
 fastest_accessible_station2 <- rbind(fastest_accessible_station2, fastest_station2)
 summary(fastest_accessible_station2$mean_travel_time)
+
+#3) Walk-only - ceteris paribus
+fastest_accessible_stationWALK_CP <- get_fastest_station(origins = pop_centroids, destinations = accessible_stations, max_trip_duration = 500, mode=c("WALK"))
+missing_centroids <- pop_centroids %>%
+  filter(!id %in% fastest_accessible_stationWALK_CP$from_id)
+fastest_station2 <- get_fastest_station(origins = missing_centroids, destinations = accessible_stations, mode = c("WALK"), max_trip_duration=1000)
+fastest_accessible_stationWALK_CP <- rbind(fastest_accessible_stationWALK_CP, fastest_station2)
+summary(fastest_accessible_stationWALK_CP$mean_travel_time)
+
+#4) And walk-only with slower walking speed
+fastest_accessible_stationWALK <- get_fastest_station(origins = pop_centroids, destinations = accessible_stations,
+                                                   walk_speed = 0.43, max_trip_duration = 500, mode=c("WALK"))
+missing_centroids <- pop_centroids %>%
+  filter(!id %in% fastest_accessible_stationWALK$from_id)
+fastest_station2 <- get_fastest_station(origins = missing_centroids, destinations = accessible_stations,
+                                        mode = c("WALK"), walk_speed = 0.43, max_trip_duration=2000)
+fastest_accessible_stationWALK <- rbind(fastest_accessible_stationWALK, fastest_station2)
+missing_centroids <- pop_centroids %>%
+  filter(!id %in% fastest_accessible_stationWALK$from_id)
+fastest_station2 <- get_fastest_station(origins = missing_centroids, destinations = accessible_stations,
+                                        mode = c("WALK"), walk_speed = 0.43, max_trip_duration=3000)
+fastest_accessible_stationWALK <- rbind(fastest_accessible_stationWALK, fastest_station2)
+summary(fastest_accessible_stationWALK$mean_travel_time)
 
 #Join to one dataframe
 fastest_time_to_stations <- study_lsoas %>%
@@ -157,7 +190,17 @@ fastest_time_to_stations <- study_lsoas %>%
   select(-to_id)%>%
   left_join(., fastest_accessible_station2, by = c("lsoa21cd" = "from_id"))%>%
   rename("mean_accessible_stationSLOW" = mean_travel_time)%>%
+  select(-to_id)%>%
+  left_join(., fastest_stationWALK, by = c("lsoa21cd" = "from_id"))%>%
+  rename("mean_fastest_stationWALK" = mean_travel_time)%>%
+  select(-to_id)%>%
+  left_join(., fastest_accessible_stationWALK_CP, by = c("lsoa21cd" = "from_id"))%>%
+  rename("mean_accessible_stationWALK_CP" = mean_travel_time)%>%
+  select(-to_id)%>%
+  left_join(., fastest_accessible_stationWALK, by = c("lsoa21cd" = "from_id"))%>%
+  rename("mean_accessible_stationWALK_SLOW" = mean_travel_time)%>%
   select(-to_id)
+write.csv(fastest_time_to_stations, "data_export_vis/fastest_time_to_stations.csv")
 
 #Identify stations where fastest station is (not) accessible
 fastest_time_to_stations <- fastest_time_to_stations %>%
@@ -195,6 +238,21 @@ print(avg_diffSLOW)
 #So bulk of difference is predicted to come from diff walking speeds
 #Makes sense: lots of stations in central London so lots of choice, and stops tend to be accessible at the end of lines on the periphery
 
+#Now do the same, but considering walking only
+calculationsWALK <- pop_centroids %>%
+  select(id, total_disabled)%>%
+  left_join(fastest_time_to_stations, by=c("id" = "lsoa21cd"))%>%
+  mutate(diffCP = mean_accessible_stationWALK_CP-mean_fastest_stationWALK,
+         diffSLOW = mean_accessible_stationWALK_SLOW-mean_fastest_stationWALK)
+calculationsWALK <- calculationsWALK %>%
+  mutate(diffCPmultiplied = diffCP * total_disabled,
+         diffSLOWmultiplied = diffSLOW * total_disabled)
+avg_diffCP_WALK <- sum(calculationsWALK$diffCPmultiplied)/total_disabled
+avg_diffSLOW_WALK <- sum(calculationsWALK$diffSLOWmultiplied)/total_disabled
+print(avg_diffCP_WALK)
+print(avg_diffSLOW_WALK)
+#So the rest of the PT network, e.g. bus, tram, DLR, is doing a lot of the heavy lifting
+
 # ---- Display results -----
 
 #Violin plot of time distributions
@@ -231,9 +289,43 @@ ggplot(pivoted, aes(x = type, y = value, fill = type)) +
     axis.text = element_text(family = "Segoe UI", size=9),
     axis.title.x = element_text(margin = margin(t = 10)))
 #Need to note that this is not the full range - upper bound actually extends beyond 200 min
-rm(pivoted)
 #Horizontal equity: still a difference
 #Vertical equity: needs considerable change
+
+#Compare walking-only scenarios - probably won't use
+pivoted <- fastest_time_to_stations %>%
+  st_drop_geometry() %>%
+  select(mean_fastest_stationWALK, mean_accessible_stationWALK_CP, mean_accessible_stationWALK_SLOW) %>%
+  rename(
+    "Fastest Time\nto a Station" = mean_fastest_stationWALK,
+    "Fastest Time to an\nAccessible Station,\nSpeed Unchanged" = mean_accessible_stationWALK_CP,
+    "Fastest Time to an\nAccessible Station,\nSlower Walking Speed" = mean_accessible_stationWALK_SLOW
+  ) %>%
+  pivot_longer(cols = everything(),
+               names_to = "type",
+               values_to = "value")
+pivoted$type <- factor(pivoted$type, levels = c(
+  "Fastest Time\nto a Station",
+  "Fastest Time to an\nAccessible Station,\nSpeed Unchanged",
+  "Fastest Time to an\nAccessible Station,\nSlower Walking Speed"
+))
+
+ggplot(pivoted, aes(x = type, y = value, fill = type)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, outlier.shape = NA) +
+  labs(title = "Distribution of Travel Times to Stations, Walking Only",
+       x = "Travel Type",
+       y = "Time (minutes)") +
+  ylim(0, 1000) +
+  theme_minimal() +
+  theme(legend.position = "none")+
+  scale_fill_brewer(palette = "Dark2") +
+  theme(
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
+    axis.title = element_text(family = "Segoe UI Semibold", size=10),
+    axis.text = element_text(family = "Segoe UI", size=9),
+    axis.title.x = element_text(margin = margin(t = 10)))
+#Note it extends beyond this
 
 #Map - binary of whether fastest station is accessible or not
 
@@ -258,7 +350,10 @@ tm_shape(fastest_time_to_stations) +
     alpha=0.35,
     title = "Fastest Station Status",
     textNA = "",
+    border.alpha=0
   ) +
+  tm_shape(boroughs)+
+  tm_polygons(fill=NA, alpha=0, lwd=1.5)+
   tm_shape(tube_stations_main)+
   tm_dots(fill = "classification2", 
           fill.scale = tm_scale_categorical(values = mapping),
@@ -371,7 +466,7 @@ tmap_save(
   filename = "maps/nearest_speed_ratio.png",
   dpi=300)
 
-breaks <- c(1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 50)
+breaks <- c(1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 82)
 tmap_save(
   tm_shape(fastest_time_to_stations) +
     tm_polygons(
@@ -417,6 +512,102 @@ tmap_save(
   filename = "maps/nearest_speed_ratioSLOW.png",
   dpi=300)
 #Note some ratios tend to be larger in areas with larger LSOAs - likely a bias due to MAUP
+
+#Display ratio between PT and walking accessibility
+fastest_time_to_stations <- fastest_time_to_stations %>%
+  mutate(modal_accessibility_ratioCP = mean_accessible_stationWALK_CP/mean_accessible_stationCP,
+         modal_accessibility_ratioSLOW = mean_accessible_stationWALK_SLOW/mean_accessible_stationSLOW)
+summary(fastest_time_to_stations$modal_accessibility_ratioCP)
+summary(fastest_time_to_stations$modal_accessibility_ratioSLOW)
+
+breaks <- 1:8
+tmap_save(
+  tm_shape(fastest_time_to_stations) +
+    tm_polygons(
+      col = "modal_accessibility_ratioCP",
+      style="fixed",
+      breaks=breaks,
+      palette="blue_green_sequential",
+      alpha=0.9,
+      title = "Ratio",
+      textNA = "",
+      border.alpha=0
+    ) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    tm_title("Travel Time Ratio: Time to Step-Free Stations by Walking and \nPublic Transport, versus Walking Only") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)) +
+    tm_layout(
+      bg.color = "grey80",
+      legend.outside = TRUE,
+      legend.outside.position = "right",
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/mode_ratioCP.png",
+  dpi=300)
+#Make sense that ratio is higher on periphery, because I am likely excluding non-TfL services
+#But this doesn't actually show us much, because higher ratio=bus is present, which is a good thing
+
+#Redefining this: PT time minus walking time? Absolute benefit
+fastest_time_to_stations <- fastest_time_to_stations %>%
+  mutate(PT_to_accessible_station_benefitCP = mean_accessible_stationWALK_CP - mean_accessible_stationCP,
+         PT_to_accessible_station_benefitSLOW = mean_accessible_stationWALK_SLOW - mean_accessible_stationSLOW)
+summary(fastest_time_to_stations$PT_to_accessible_station_benefitCP)
+summary(fastest_time_to_stations$PT_to_accessible_station_benefitSLOW)
+
+#Need to look for areas with low current benefit but high accessibility disparity
+
+#Code adapted from: https://cran.r-project.org/web/packages/biscale/vignettes/biscale.html
+bi_data <- bi_class(fastest_time_to_stations, x = ratioCP, y = mean_accessible_stationWALK_CP, style = "fisher", dim = 3)
+pal <- bi_pal("GrPink", dim = 3, preview = FALSE)
+bi_classes <- names(pal)
+tmap_save(
+tm_shape(bi_data) +
+  tm_polygons("bi_class",
+              palette = pal,
+              border.alpha = 0,
+              legend.show = FALSE) +
+  tm_shape(boroughs)+
+  tm_polygons(lwd=1, fill=NA, alpha=0)+
+  tm_compass(type = "8star",
+             size = 3,
+             position = c(0.9, 0.22)) +
+  tm_scalebar(
+    position = c(0.82, 0.08),
+    text.size = 0.7,
+    breaks = c(0, 5, 10)) +
+  tm_title("Step-Free Accessibility Disparity versus Step-Free Benefit From Non-Rail PT")+
+  tm_layout(
+    title.fontfamily = "Segoe UI Semibold",
+    title.size = 1.2,
+    bg.color = "grey70"),
+filename = "maps/bivariate_choropleth.png",
+dpi = 300)
+legend <- bi_legend(
+  pal = "GrPink",
+  dim = 3,
+  xlab = "Higher Accessibility Disparity",
+  ylab = "Higher Non-Rail PT Benefit",
+  size = 8)+
+  theme(
+    text = element_text(family = "Segoe UI", size = 8.5))
+ggsave(filename = "maps/bivariate_legend.png",
+  plot = legend, dpi = 300, bg = "white")
+#Need to manually combine with legend
+#We are looking for the light pink/purple
+#Confirms feeder buses are needed near bottom of Northern Line?
 
 # ----- Global spatial autocorrelation -------
 
@@ -687,14 +878,14 @@ tm_shape(HH_SLOW)+
 #Could do a buffer?
 
 #To do:
-# - Extra r5r scenarios - no interchanges? Walking only?
-  # - Considering whether the bus network is the thing mitigating the disparity (context of LA cuts)
-  # - What does this mean contextually during a time of cuts?
+# - Extra r5r scenarios - no interchanges?
+# - Other cluster approaches, e.g. k-means?
 # - Identify overlaps with inaccessible stations
   # - Compare to TfL list?
   # - Could I add vehicle ownership as a factor in the index?
 # - RUN OTP DIRECTLY IN JAVA!!
   # - Or a for-loop, but unlikely to run on time
+  # - Could I run isochrones for a time boundary, and then consider overlaps from there?
 
 #Need to consider the issue that detailed_itineraries provides more realistic travel times than travel_time_matrix
 #Hence some LSOAs having unexpectedly long walks
