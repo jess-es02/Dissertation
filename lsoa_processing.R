@@ -265,4 +265,4 @@ tmap_save(
   dpi = 300
 )
 
-rm(lsoa_attributes, break_labels, breaks, legend_labels)
+rm(lsoa_attributes, break_labels, breaks)

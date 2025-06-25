@@ -26,12 +26,13 @@ library(rcartocolor)
 library(spdep)
 library(biscale)
 library(cowplot)
+library(car)
 
 # ---- Accessibility to step-free stations ------
 
 #Extract all stations, format in r5r-compatible manner
 all_stations <- tube_stations_main %>%
-  select(-classification)%>%
+  select(-classification, -upgrade_status, -fare_zones)%>%
   st_transform(4326) %>%
   mutate(lon = st_coordinates(.)[, 1],
          lat = st_coordinates(.)[, 2]) %>%
@@ -41,7 +42,7 @@ all_stations <- tube_stations_main %>%
 #Extract accessible stations, format in r5r-compatible manner
 accessible_stations <- tube_stations_main %>%
   filter(classification == 'Fully Accessible')%>%
-  select(-classification)%>%
+  select(-classification, -upgrade_status, -fare_zones)%>%
   st_transform(4326) %>%
   mutate(lon = st_coordinates(.)[, 1],
          lat = st_coordinates(.)[, 2]) %>%
@@ -165,21 +166,6 @@ fastest_station2 <- get_fastest_station(origins = missing_centroids, destination
 fastest_accessible_stationWALK_CP <- rbind(fastest_accessible_stationWALK_CP, fastest_station2)
 summary(fastest_accessible_stationWALK_CP$mean_travel_time)
 
-#4) And walk-only with slower walking speed
-fastest_accessible_stationWALK <- get_fastest_station(origins = pop_centroids, destinations = accessible_stations,
-                                                   walk_speed = 0.43, max_trip_duration = 500, mode=c("WALK"))
-missing_centroids <- pop_centroids %>%
-  filter(!id %in% fastest_accessible_stationWALK$from_id)
-fastest_station2 <- get_fastest_station(origins = missing_centroids, destinations = accessible_stations,
-                                        mode = c("WALK"), walk_speed = 0.43, max_trip_duration=2000)
-fastest_accessible_stationWALK <- rbind(fastest_accessible_stationWALK, fastest_station2)
-missing_centroids <- pop_centroids %>%
-  filter(!id %in% fastest_accessible_stationWALK$from_id)
-fastest_station2 <- get_fastest_station(origins = missing_centroids, destinations = accessible_stations,
-                                        mode = c("WALK"), walk_speed = 0.43, max_trip_duration=3000)
-fastest_accessible_stationWALK <- rbind(fastest_accessible_stationWALK, fastest_station2)
-summary(fastest_accessible_stationWALK$mean_travel_time)
-
 #Join to one dataframe
 fastest_time_to_stations <- study_lsoas %>%
   left_join(., fastest_station, by = c("lsoa21cd" = "from_id"))%>%
@@ -196,11 +182,14 @@ fastest_time_to_stations <- study_lsoas %>%
   select(-to_id)%>%
   left_join(., fastest_accessible_stationWALK_CP, by = c("lsoa21cd" = "from_id"))%>%
   rename("mean_accessible_stationWALK_CP" = mean_travel_time)%>%
-  select(-to_id)%>%
-  left_join(., fastest_accessible_stationWALK, by = c("lsoa21cd" = "from_id"))%>%
-  rename("mean_accessible_stationWALK_SLOW" = mean_travel_time)%>%
   select(-to_id)
-write.csv(fastest_time_to_stations, "data_export_vis/fastest_time_to_stations.csv")
+
+#Calculate fastest accessible station by walking, with the slower walking distance
+#This will be the same route as mean_accessible_stationWALK_CP, so we don't need to run the routing again
+fastest_time_to_stations <- fastest_time_to_stations %>%
+  mutate(mean_accessible_stationWALK_SLOW = round((mean_accessible_stationWALK_CP * 1.4) / 0.43, 1))
+
+st_write(fastest_time_to_stations, "data_export_vis/fastest_time_to_stations.gpkg")
 
 #Identify stations where fastest station is (not) accessible
 fastest_time_to_stations <- fastest_time_to_stations %>%
@@ -593,7 +582,7 @@ tm_shape(bi_data) +
     title.fontfamily = "Segoe UI Semibold",
     title.size = 1.2,
     bg.color = "grey70"),
-filename = "maps/bivariate_choropleth.png",
+filename = "maps/bivariate_choropleth_PThelp.png",
 dpi = 300)
 legend <- bi_legend(
   pal = "GrPink",
@@ -603,7 +592,7 @@ legend <- bi_legend(
   size = 8)+
   theme(
     text = element_text(family = "Segoe UI", size = 8.5))
-ggsave(filename = "maps/bivariate_legend.png",
+ggsave(filename = "maps/bivariate_legend_PThelp.png",
   plot = legend, dpi = 300, bg = "white")
 #Need to manually combine with legend
 #We are looking for the light pink/purple
@@ -863,6 +852,86 @@ names(fastest_time_to_stations)[
 names(fastest_time_to_stations)[
   names(fastest_time_to_stations) == "Slower Walking Speed"] <- "hs_SLOW"
 
+#Bivariate choropleth: accessibility ratio versus proportion
+
+#Need to add some slight noise to the data so we can add quantiles
+bivariate_data <- fastest_time_to_stations %>%
+  select(lsoa21cd, ratioCP, step_free_benefit_indexW)%>%
+  mutate(ratioCP_jitter = jitter(ratioCP, amount = 1e-6)) #ChatGPT helped!
+
+bi_data <- bi_class(bivariate_data, x = ratioCP_jitter, y = step_free_benefit_indexW, style = "quantile", dim = 4)
+pal <- bi_pal("GrPink2", dim = 4, preview = FALSE)
+bi_classes <- names(pal)
+tmap_save(
+  tm_shape(bi_data) +
+    tm_polygons("bi_class",
+                palette = pal,
+                border.alpha = 0,
+                legend.show = FALSE) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)) +
+    tm_title("Step-Free Accessibility Disparity versus Presence of In-Need Population")+
+    tm_layout(
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      bg.color = "grey70"),
+  filename = "maps/bivariate_choropleth_disparity_pop.png",
+  dpi = 300)
+legend <- bi_legend(
+  pal = "GrPink2",
+  dim = 4,
+  xlab = "Higher Accessibility Disparity",
+  ylab = "Higher In-Need Population",
+  size = 5)+
+  theme(
+    text = element_text(family = "Segoe UI"))
+ggsave(filename = "maps/bivariate_legend_disparity_pop.png",
+       plot = legend, dpi = 300, bg = "white")
+#Need to manually combine with legend
+#We are looking for higher colours!
+#Difficult to compare with SLOW values because we cannot do much about changed accessibility from slower walking speeds
+
+# ---- Clustering ------
+
+#Explore distributions before scaling
+hist(fastest_time_to_stations$ratioCP, 
+     main = "Distribution of ratioCP", 
+     xlab = "ratioCP", 
+     col = "lightblue", 
+     border = "black",
+     breaks=100) #Positive skew - needs to be scaled
+hist(fastest_time_to_stations$step_free_benefit_indexW, 
+     main = "Distribution of pop index", 
+     xlab = "ratioCP", 
+     col = "red", 
+     border = "black",
+     breaks=100) #Relatively normal dist
+
+symbox(~as.numeric(ratioCP), fastest_time_to_stations, na.rm=T, powers=seq(-3, 3, by=.5))
+
+#Take cube root of ratioCP
+cluster_vars <- fastest_time_to_stations %>%
+  select(lsoa21cd, ratioCP, step_free_benefit_indexW) %>%
+  mutate(ratioCP_sqrt = sqrt(ratioCP))
+hist(cluster_vars$ratioCP_sqrt, 
+     main = "Distribution of ratioCsqrt", 
+     xlab = "ratioCP", 
+     col = "lightblue", 
+     border = "black",
+     breaks=100)
+#This is a lot more normal, but there's not much we can do about the skew, as so many LSOAs have a ratio of 1
+
+#XXX
+#Could I categorise, and do k-modes instead?
+#Hierarchal clustering might be able to better to deal with many values of 1
+
 # ---- Overlaps with stations ------
 
 #Extract high-high areas
@@ -877,15 +946,28 @@ tm_shape(HH_SLOW)+
 #How to choose? Lots of stations are close by but not in the HH areas
 #Could do a buffer?
 
+#To explore bivariate choropleth manually:
+tmap_mode("view")
+tm_shape(bi_data) +
+  tm_polygons("bi_class",
+              palette = pal,
+              border.alpha = 0,
+              legend.show = FALSE) +
+  tm_shape(boroughs)+
+  tm_polygons(lwd=1, fill=NA, alpha=0)+
+  tm_shape(tube_stations_main)+
+  tm_dots(fill="classification")
+
+
 #To do:
-# - Extra r5r scenarios - no interchanges?
-# - Other cluster approaches, e.g. k-means?
+# - Other cluster approaches, e.g. k-means or hierarchal?
 # - Identify overlaps with inaccessible stations
   # - Compare to TfL list?
   # - Could I add vehicle ownership as a factor in the index?
-# - RUN OTP DIRECTLY IN JAVA!!
+# - Run OTP directly in Java!
+  #  java -Xmx2G -jar otp-2.2.0-shaded.jar --load graphs/accessible --serve
   # - Or a for-loop, but unlikely to run on time
-  # - Could I run isochrones for a time boundary, and then consider overlaps from there?
+# - Extra r5r scenarios - no interchanges?
 
 #Need to consider the issue that detailed_itineraries provides more realistic travel times than travel_time_matrix
 #Hence some LSOAs having unexpectedly long walks

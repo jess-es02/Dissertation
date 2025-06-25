@@ -162,7 +162,7 @@ routingOptionsW <- otp_validate_routing_options(routingOptionsW)
 # ----- Cumulative opportunities measure -------
 
 #Define origins and destinations
-selected_ids <- head(pop_centroids$id, 5)
+selected_ids <- head(pop_centroids$id, 2)
 sample_origins <- pop_centroids[pop_centroids$id %in% selected_ids, ]
 sample_destinations <- workforce_centroids[workforce_centroids$id %in% selected_ids, ]
 
@@ -178,7 +178,7 @@ fromPlace <- st_as_sf(fromPlace, coords = c("lon", "lat"), crs = 4326) %>%
 
 #Load wheelchair object
 log4 <- otp_setup(otp = path_otp, dir = otp_path, router="accessible")
-otpcon <- otp_connect()
+otpcon <- opentripplanner::otp_connect()
 
 test <- otp_plan(otpcon,
                  fromPlace = fromPlace,
@@ -188,24 +188,11 @@ test <- otp_plan(otpcon,
                  get_geometry = FALSE,
                  distance_balance = TRUE,
                  mode = c("WALK", "TRANSIT"),
+                 maxWalkDistance = 500,
                  routeOptions = routingOptionsW,
-                 numItineraries = 1,
-                 #ncores = max(round(parallel::detectCores() * 1.25) - 1, 1))
-)
+                 numItineraries = 1)%>%
+  group_by(fromPlace, toPlace) %>%
+  summarise(mean_duration = mean(duration, na.rm = TRUE)) %>%
+  ungroup()
 
 #Would need to set date, time, maxWalkDistance, numItineraries
-
-#To do:
-# - Trial query from origin to destination centroids
-# - Could use r5r to map time to nearest accessible station vs nearest station in general
-# - Could I consider number of transfers in cumulative opportunities, not just opportunities reached?
-# - For cumulative opportunities, could I also compare with an interchange restriction? More realistic for PwMD, indicates convenience etc.
-# - Bivariate Moran's i with vehicle ownership?
-# - Isochrones, not just job access?
-
-# - Configure settings
-# - Run accessibility and isochrones for each
-
-gtfs <- gtfstools::read_gtfs("final_r5r/gtfs_accessible.zip")
-view(gtfs$stops)
-view(gtfs$pathways)

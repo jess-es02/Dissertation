@@ -393,4 +393,5 @@ ggplot(gtfs_stops, aes(x = lines, fill = classification)) +
         axis.text = element_text(family = "Segoe UI", size=9),
         legend.title = element_text(family = "Segoe UI Semibold", size=11),
         legend.text = element_text(family = "Segoe UI", size=9))
-#Add note that it's about overall station classification
+#Add note that it's about overall station classification, not the platforms for that line
+rm(mapping, gtfs_stops)
