@@ -27,6 +27,11 @@ library(spdep)
 library(biscale)
 library(cowplot)
 library(car)
+library(factoextra)
+library(cluster)
+library(caret)
+library(dendextend)
+library(MASS)
 
 # ---- Accessibility to step-free stations ------
 
@@ -190,6 +195,9 @@ fastest_time_to_stations <- fastest_time_to_stations %>%
   mutate(mean_accessible_stationWALK_SLOW = round((mean_accessible_stationWALK_CP * 1.4) / 0.43, 1))
 
 st_write(fastest_time_to_stations, "data_export_vis/fastest_time_to_stations.gpkg")
+#fastest_time_to_stations <- st_read("data_export_vis/fastest_time_to_stations.gpkg")
+
+# ---- Quick summary stats --------
 
 #Identify stations where fastest station is (not) accessible
 fastest_time_to_stations <- fastest_time_to_stations %>%
@@ -241,6 +249,31 @@ avg_diffSLOW_WALK <- sum(calculationsWALK$diffSLOWmultiplied)/total_disabled
 print(avg_diffCP_WALK)
 print(avg_diffSLOW_WALK)
 #So the rest of the PT network, e.g. bus, tram, DLR, is doing a lot of the heavy lifting
+
+#Proportion of population living within 20 min of a station
+pop_proportions <- fastest_time_to_stations %>%
+  left_join(pop_centroids, by=c("lsoa21cd" = "id"))%>%
+  select(lsoa21cd, mean_fastest_station, mean_accessible_stationCP, mean_accessible_stationSLOW, total_pop, total_disabled)%>%
+  mutate(total_non_disabled = total_pop-total_disabled)
+total_non_disabled = sum(pop_proportions$total_non_disabled)
+pct_under_20min_non_disabled = pop_proportions %>%
+  filter(mean_fastest_station <= 20) %>%
+  summarise(sum = sum(total_non_disabled)) %>%
+  pull(sum)*100/total_non_disabled
+
+total_disabled = sum(pop_proportions$total_disabled)
+pct_under_20min_disabledCP = pop_proportions %>%
+  filter(mean_accessible_stationCP <= 20) %>%
+  summarise(sum = sum(total_disabled)) %>%
+  pull(sum)*100/total_disabled
+pct_under_20min_disabledSLOW = pop_proportions %>%
+  filter(mean_accessible_stationSLOW <= 20) %>%
+  summarise(sum = sum(total_disabled)) %>%
+  pull(sum)*100/total_disabled
+
+pct_under_20min_non_disabled
+pct_under_20min_disabledCP
+pct_under_20min_disabledSLOW
 
 # ---- Display results -----
 
@@ -799,7 +832,6 @@ set.seed(10)
 bv_moranCP <- localmoran_bv(fastest_time_to_stations$step_free_benefit_indexW, fastest_time_to_stations$ratioCP, area.lw, nsim = 999)
 bv_moranSLOW <- localmoran_bv(fastest_time_to_stations$step_free_benefit_indexW, fastest_time_to_stations$ratioSLOW, area.lw, nsim = 999)
 
-
 fastest_time_to_stations$hs_CP <- hotspot(bv_moranCP, Prname="Pr(folded) Sim", cutoff=0.05,
                        quadrant.type="pysal", p.adjust="none")
 fastest_time_to_stations$hs_SLOW <- hotspot(bv_moranSLOW, Prname="Pr(folded) Sim", cutoff=0.05,
@@ -899,38 +931,101 @@ ggsave(filename = "maps/bivariate_legend_disparity_pop.png",
 #Difficult to compare with SLOW values because we cannot do much about changed accessibility from slower walking speeds
 
 # ---- Clustering ------
+#https://www.datacamp.com/tutorial/hierarchical-clustering-R
+
+#We will do hierarchal clustering as k-means/medoids assumes circular clusters
+#Clustering on ratioSLOW as this is more representative of real-world conditions
+
+cluster_vars <- fastest_time_to_stations %>%
+  dplyr::select(lsoa21cd, ratioCP, ratioSLOW, step_free_benefit_indexW)
+
+#Plot association between variables
+ggplot(cluster_vars, aes(ratioSLOW, step_free_benefit_indexW)) +
+  geom_point(alpha = 0.25)
 
 #Explore distributions before scaling
-hist(fastest_time_to_stations$ratioCP, 
-     main = "Distribution of ratioCP", 
-     xlab = "ratioCP", 
+hist(cluster_vars$ratioSLOW, 
+     main = "Distribution of ratioSLOW", 
      col = "lightblue", 
      border = "black",
      breaks=100) #Positive skew - needs to be scaled
-hist(fastest_time_to_stations$step_free_benefit_indexW, 
+hist(cluster_vars$step_free_benefit_indexW, 
      main = "Distribution of pop index", 
-     xlab = "ratioCP", 
      col = "red", 
      border = "black",
      breaks=100) #Relatively normal dist
 
-symbox(~as.numeric(ratioCP), fastest_time_to_stations, na.rm=T, powers=seq(-3, 3, by=.5))
+symbox(~as.numeric(ratioSLOW), cluster_vars, na.rm=T, powers=seq(-3, 3, by=.5))
+#None are great
 
-#Take cube root of ratioCP
-cluster_vars <- fastest_time_to_stations %>%
-  select(lsoa21cd, ratioCP, step_free_benefit_indexW) %>%
-  mutate(ratioCP_sqrt = sqrt(ratioCP))
-hist(cluster_vars$ratioCP_sqrt, 
-     main = "Distribution of ratioCsqrt", 
-     xlab = "ratioCP", 
+#Try box-cox transformation (chatGPT helped here)
+x <- as.numeric(fastest_time_to_stations$ratioSLOW)
+model <- lm(x ~ 1)
+boxcox_result <- boxcox(model, lambda = seq(-3, 3, 0.1), 
+                        main = "Box-Cox Transformation - Optimal Lambda")
+best_lambda <- boxcox_result$x[which.max(boxcox_result$y)]
+x_trans <- (x^best_lambda - 1) / best_lambda
+hist(x_trans, 
+     main = "Box-Cox Transformed ratioSLOW", 
      col = "lightblue", 
      border = "black",
      breaks=100)
-#This is a lot more normal, but there's not much we can do about the skew, as so many LSOAs have a ratio of 1
+cluster_vars$ratioSLOW_boxcox <- x_trans
 
-#XXX
-#Could I categorise, and do k-modes instead?
-#Hierarchal clustering might be able to better to deal with many values of 1
+#Now both are relatively normally distributed, let's standardise them so the scales are the same
+cluster_vars_numeric_scaled <- cluster_vars %>%
+  dplyr::select(where(is.numeric))%>%
+  st_drop_geometry()%>%
+  scale()
+cluster_vars_scaled <- cluster_vars %>%
+  dplyr::select(lsoa21cd)%>%
+  st_drop_geometry()%>%
+  bind_cols(as.data.frame(cluster_vars_numeric_scaled))%>%
+  dplyr::select(-ratioSLOW, -ratioCP)
+rm(cluster_vars_numeric_scaled)
+
+ggplot(cluster_vars_scaled, aes(ratioSLOW_boxcox, step_free_benefit_indexW)) +
+  geom_point(alpha = 0.25)
+
+#Calculate distances and cluster
+dist_mat <- dist(cluster_vars_scaled %>% dplyr::select(where(is.numeric)), method = "euclidean")
+hc <- hclust(dist_mat, method = 'complete')
+
+#Silhouette scores
+max_k <- 10
+avg_sil <- numeric(max_k)
+
+for (k in 2:max_k) {
+  clusters <- cutree(hc, k)
+  sil <- silhouette(clusters, dist_mat)
+  avg_sil[k] <- mean(sil[, 3])}
+
+plot(2:max_k, avg_sil[2:max_k], type = "b",
+     xlab = "Number of clusters (k)",
+     ylab = "Average silhouette width",
+     main = "Silhouette Analysis for Hierarchical Clustering")
+
+tree_cut <- cutree(hc, k = 4)
+
+#Plot dendrogram
+hc_obj <- as.dendrogram(hc)
+dend_plot <- color_branches(hc_obj, k=4)
+plot(dend_plot)
+
+#Add back to data
+cluster_vars <- mutate(cluster_vars, cluster = tree_cut)
+
+ggplot(cluster_vars, aes(x=ratioSLOW_boxcox, y = step_free_benefit_indexW, color = factor(cluster))) + geom_point()
+ggplot(cluster_vars, aes(x=ratioSLOW, y = step_free_benefit_indexW, color = factor(cluster))) + geom_point()
+
+#Redo
+cluster_vars <- cluster_vars %>%
+  dplyr::select(-cluster)
+
+#To do:
+  # - Try complete with ratioCP?
+  # - Different k-values
+  # - Plot
 
 # ---- Overlaps with stations ------
 
@@ -960,7 +1055,6 @@ tm_shape(bi_data) +
 
 
 #To do:
-# - Other cluster approaches, e.g. k-means or hierarchal?
 # - Identify overlaps with inaccessible stations
   # - Compare to TfL list?
   # - Could I add vehicle ownership as a factor in the index?
