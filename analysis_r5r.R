@@ -6,6 +6,7 @@
     # - For PwMD, this is the nearest accessible station
   # - Calculate summary statistics and create maps
   # - Assess local and global spatial autocorrelation in time ratios
+  # - Cluster LSOAs according to the disparity and presence of in-need population
 
 #Beforehand, ensure to run:
   # 1) lsoa_processing.R
@@ -37,7 +38,7 @@ library(MASS)
 
 #Extract all stations, format in r5r-compatible manner
 all_stations <- tube_stations_main %>%
-  select(-classification, -upgrade_status, -fare_zones)%>%
+  dplyr::select(-classification, -upgrade_status, -fare_zones)%>%
   st_transform(4326) %>%
   mutate(lon = st_coordinates(.)[, 1],
          lat = st_coordinates(.)[, 2]) %>%
@@ -47,7 +48,7 @@ all_stations <- tube_stations_main %>%
 #Extract accessible stations, format in r5r-compatible manner
 accessible_stations <- tube_stations_main %>%
   filter(classification == 'Fully Accessible')%>%
-  select(-classification, -upgrade_status, -fare_zones)%>%
+  dplyr::select(-classification, -upgrade_status, -fare_zones)%>%
   st_transform(4326) %>%
   mutate(lon = st_coordinates(.)[, 1],
          lat = st_coordinates(.)[, 2]) %>%
@@ -175,19 +176,19 @@ summary(fastest_accessible_stationWALK_CP$mean_travel_time)
 fastest_time_to_stations <- study_lsoas %>%
   left_join(., fastest_station, by = c("lsoa21cd" = "from_id"))%>%
   rename("mean_fastest_station" = mean_travel_time)%>%
-  select(-to_id)%>%
+  dplyr::select(-to_id)%>%
   left_join(., fastest_accessible_station1, by = c("lsoa21cd" = "from_id"))%>%
   rename("mean_accessible_stationCP" = mean_travel_time)%>%
-  select(-to_id)%>%
+  dplyr::select(-to_id)%>%
   left_join(., fastest_accessible_station2, by = c("lsoa21cd" = "from_id"))%>%
   rename("mean_accessible_stationSLOW" = mean_travel_time)%>%
-  select(-to_id)%>%
+  dplyr::select(-to_id)%>%
   left_join(., fastest_stationWALK, by = c("lsoa21cd" = "from_id"))%>%
   rename("mean_fastest_stationWALK" = mean_travel_time)%>%
-  select(-to_id)%>%
+  dplyr::select(-to_id)%>%
   left_join(., fastest_accessible_stationWALK_CP, by = c("lsoa21cd" = "from_id"))%>%
   rename("mean_accessible_stationWALK_CP" = mean_travel_time)%>%
-  select(-to_id)
+  dplyr::select(-to_id)
 
 #Calculate fastest accessible station by walking, with the slower walking distance
 #This will be the same route as mean_accessible_stationWALK_CP, so we don't need to run the routing again
@@ -220,7 +221,7 @@ summary(fastest_time_to_stations$diffSLOW)
 
 #Find the average difference, weighted by number of disabled people
 calculations <- pop_centroids %>%
-  select(id, total_disabled)%>%
+  dplyr::select(id, total_disabled)%>%
   left_join(fastest_time_to_stations, by=c("id" = "lsoa21cd"))%>%
   mutate(diffCP = mean_accessible_stationCP-mean_fastest_station,
          diffSLOW = mean_accessible_stationSLOW-mean_fastest_station)
@@ -237,7 +238,7 @@ print(avg_diffSLOW)
 
 #Now do the same, but considering walking only
 calculationsWALK <- pop_centroids %>%
-  select(id, total_disabled)%>%
+  dplyr::select(id, total_disabled)%>%
   left_join(fastest_time_to_stations, by=c("id" = "lsoa21cd"))%>%
   mutate(diffCP = mean_accessible_stationWALK_CP-mean_fastest_stationWALK,
          diffSLOW = mean_accessible_stationWALK_SLOW-mean_fastest_stationWALK)
@@ -253,7 +254,7 @@ print(avg_diffSLOW_WALK)
 #Proportion of population living within 20 min of a station
 pop_proportions <- fastest_time_to_stations %>%
   left_join(pop_centroids, by=c("lsoa21cd" = "id"))%>%
-  select(lsoa21cd, mean_fastest_station, mean_accessible_stationCP, mean_accessible_stationSLOW, total_pop, total_disabled)%>%
+  dplyr::select(lsoa21cd, mean_fastest_station, mean_accessible_stationCP, mean_accessible_stationSLOW, total_pop, total_disabled)%>%
   mutate(total_non_disabled = total_pop-total_disabled)
 total_non_disabled = sum(pop_proportions$total_non_disabled)
 pct_under_20min_non_disabled = pop_proportions %>%
@@ -280,7 +281,7 @@ pct_under_20min_disabledSLOW
 #Violin plot of time distributions
 pivoted <- fastest_time_to_stations %>%
   st_drop_geometry() %>%
-  select(mean_fastest_station, mean_accessible_stationCP, mean_accessible_stationSLOW) %>%
+  dplyr::select(mean_fastest_station, mean_accessible_stationCP, mean_accessible_stationSLOW) %>%
   rename(
     "Fastest Time\nto a Station" = mean_fastest_station,
     "Fastest Time to an\nAccessible Station,\nSpeed Unchanged" = mean_accessible_stationCP,
@@ -317,7 +318,7 @@ ggplot(pivoted, aes(x = type, y = value, fill = type)) +
 #Compare walking-only scenarios - probably won't use
 pivoted <- fastest_time_to_stations %>%
   st_drop_geometry() %>%
-  select(mean_fastest_stationWALK, mean_accessible_stationWALK_CP, mean_accessible_stationWALK_SLOW) %>%
+  dplyr::select(mean_fastest_stationWALK, mean_accessible_stationWALK_CP, mean_accessible_stationWALK_SLOW) %>%
   rename(
     "Fastest Time\nto a Station" = mean_fastest_stationWALK,
     "Fastest Time to an\nAccessible Station,\nSpeed Unchanged" = mean_accessible_stationWALK_CP,
@@ -820,7 +821,7 @@ names(fastest_time_to_stations)[
 
 #Join benefit index
 fastest_time_to_stations <- fastest_time_to_stations %>%
-  left_join(., (pop_centroids %>% select(id, step_free_benefit_indexW)), by = c("lsoa21cd" = "id"))
+  left_join(., (pop_centroids %>% dplyr::select(id, step_free_benefit_indexW)), by = c("lsoa21cd" = "id"))
 
 #Find association (not accounting for autocorrelation)
 cor.test(fastest_time_to_stations$ratioCP, fastest_time_to_stations$step_free_benefit_indexW)
@@ -937,7 +938,7 @@ ggsave(filename = "maps/bivariate_legend_disparity_pop.png",
 #Clustering on ratioSLOW as this is more representative of real-world conditions
 
 cluster_vars <- fastest_time_to_stations %>%
-  dplyr::select(lsoa21cd, ratioCP, ratioSLOW, step_free_benefit_indexW)
+  dplyr::select(lsoa21cd, ratioSLOW, step_free_benefit_indexW)
 
 #Plot association between variables
 ggplot(cluster_vars, aes(ratioSLOW, step_free_benefit_indexW)) +
@@ -959,10 +960,9 @@ symbox(~as.numeric(ratioSLOW), cluster_vars, na.rm=T, powers=seq(-3, 3, by=.5))
 #None are great
 
 #Try box-cox transformation (chatGPT helped here)
-x <- as.numeric(fastest_time_to_stations$ratioSLOW)
+x <- as.numeric(cluster_vars$ratioSLOW)
 model <- lm(x ~ 1)
-boxcox_result <- boxcox(model, lambda = seq(-3, 3, 0.1), 
-                        main = "Box-Cox Transformation - Optimal Lambda")
+boxcox_result <- boxcox(model, lambda = seq(-5, 5, 0.01))
 best_lambda <- boxcox_result$x[which.max(boxcox_result$y)]
 x_trans <- (x^best_lambda - 1) / best_lambda
 hist(x_trans, 
@@ -977,22 +977,23 @@ cluster_vars_numeric_scaled <- cluster_vars %>%
   dplyr::select(where(is.numeric))%>%
   st_drop_geometry()%>%
   scale()
-cluster_vars_scaled <- cluster_vars %>%
+cluster_vars_scaled <- cluster_vars %>% #Reattach to ID
   dplyr::select(lsoa21cd)%>%
   st_drop_geometry()%>%
   bind_cols(as.data.frame(cluster_vars_numeric_scaled))%>%
-  dplyr::select(-ratioSLOW, -ratioCP)
+  dplyr::select(-ratioSLOW)
 rm(cluster_vars_numeric_scaled)
 
 ggplot(cluster_vars_scaled, aes(ratioSLOW_boxcox, step_free_benefit_indexW)) +
   geom_point(alpha = 0.25)
 
 #Calculate distances and cluster
+set.seed(10)
 dist_mat <- dist(cluster_vars_scaled %>% dplyr::select(where(is.numeric)), method = "euclidean")
-hc <- hclust(dist_mat, method = 'complete')
+hc <- hclust(dist_mat, method = 'complete') #only way to get defined clusters
 
 #Silhouette scores
-max_k <- 10
+max_k <- 15
 avg_sil <- numeric(max_k)
 
 for (k in 2:max_k) {
@@ -1000,32 +1001,110 @@ for (k in 2:max_k) {
   sil <- silhouette(clusters, dist_mat)
   avg_sil[k] <- mean(sil[, 3])}
 
-plot(2:max_k, avg_sil[2:max_k], type = "b",
-     xlab = "Number of clusters (k)",
-     ylab = "Average silhouette width",
-     main = "Silhouette Analysis for Hierarchical Clustering")
+#Plot
+sil_data <- data.frame(
+  k = 2:max_k,
+  avg_sil = avg_sil[2:max_k])
+ggplot(sil_data, aes(x = k, y = avg_sil)) +
+  geom_point(color = "deeppink3", size = 2) +        
+  geom_line(color = "deeppink3", size=0.5, linetype="dashed") + 
+  scale_x_continuous(breaks = 2:max_k)+
+  labs(
+    title = "Silhouette Analysis",
+    x = "Number of clusters",
+    y = "Average silhouette width") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust = 0.5),
+    axis.title = element_text(family = "Segoe UI Semibold", size = 12),
+    axis.text = element_text(family = "Segoe UI", size = 10))
 
-tree_cut <- cutree(hc, k = 4)
+tree_cut <- cutree(hc, k = 6)
 
 #Plot dendrogram
 hc_obj <- as.dendrogram(hc)
-dend_plot <- color_branches(hc_obj, k=4)
+dend_plot <- color_branches(hc_obj, k=6)
 plot(dend_plot)
 
 #Add back to data
 cluster_vars <- mutate(cluster_vars, cluster = tree_cut)
 
-ggplot(cluster_vars, aes(x=ratioSLOW_boxcox, y = step_free_benefit_indexW, color = factor(cluster))) + geom_point()
-ggplot(cluster_vars, aes(x=ratioSLOW, y = step_free_benefit_indexW, color = factor(cluster))) + geom_point()
+#Plot transformed clusters
+cols <- brewer.pal(7, "Dark2")
+ggplot(cluster_vars, aes(x=ratioSLOW_boxcox, y=step_free_benefit_indexW, color = factor(cluster)))+
+  geom_point()+
+  labs(title = "Transformed Cluster Output",
+       x = "Box-Cox Transformed Travel Time Ratio, Slower Walking Speed",
+       y = "In-Need Population Index",
+       color = "Cluster")+
+  theme_minimal() +
+  scale_color_manual(values = cols) +
+  theme(
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
+    axis.title = element_text(family = "Segoe UI Semibold", size=10),
+    axis.text = element_text(family = "Segoe UI", size=9),
+    legend.title = element_text(family = "Segoe UI Semibold", size = 10),
+    legend.text = element_text(family = "Segoe UI", size = 9))
+  
+#Plot untransformed output
+ggplot(cluster_vars, aes(x=ratioSLOW, y=step_free_benefit_indexW, color = factor(cluster)))+
+  geom_point()+
+  labs(title = "Cluster Output, Untransformed",
+       x = "Travel Time Ratio, Slower Walking Speed",
+       y = "In-Need Population Index",
+       color = "Cluster")+
+  theme_minimal() +
+  scale_color_manual(values = cols) +
+  theme(
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
+    axis.title = element_text(family = "Segoe UI Semibold", size=10),
+    axis.text = element_text(family = "Segoe UI", size=9),
+    legend.title = element_text(family = "Segoe UI Semibold", size = 10),
+    legend.text = element_text(family = "Segoe UI", size = 9))
+
+#Map
+cluster_vars$cluster <- factor(cluster_vars$cluster)
+tmap_save(
+  tm_shape(cluster_vars) +
+    tm_polygons(
+      col = "cluster",
+      palette=cols,
+      title = "Cluster",
+      textNA = "",
+      alpha=0.8,
+      border.alpha=0) +
+    tm_shape(boroughs)+
+    tm_polygons(fill=NA, alpha=0, lwd=1.5)+
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("LSOAs by Accessibility Need Cluster") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)
+    ) +
+    tm_layout(
+      legend.position = c(0.01, 0.33),
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.6,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/ratio_pop_clusters.png",
+  dpi=300)
 
 #Redo
 cluster_vars <- cluster_vars %>%
   dplyr::select(-cluster)
 
 #To do:
-  # - Try complete with ratioCP?
-  # - Different k-values
-  # - Plot
+  # - Finish map - add on stations?
+  # - Might have to do ratioCP instead as that's what I have for the bivariate map
 
 # ---- Overlaps with stations ------
 
