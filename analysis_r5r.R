@@ -7,6 +7,7 @@
   # - Calculate summary statistics and create maps
   # - Assess local and global spatial autocorrelation in time ratios
   # - Cluster LSOAs according to the disparity and presence of in-need population
+  # - Assess not-fully-accessible stations according to their catchment properties, and compare to TfL's shortlisted stations
 
 #Beforehand, ensure to run:
   # 1) lsoa_processing.R
@@ -68,7 +69,9 @@ get_fastest_station <- function(origins,
                                 destinations, 
                                 walk_speed = 1.4, 
                                 max_trip_duration = 180,
-                                mode = c("WALK", "TRANSIT")) {
+                                mode = c("WALK", "TRANSIT"),
+                                return_fastest_station = FALSE) {
+  
   #Get travel times for each departure time, and combine
   ttm_combined <- departure_times %>%
     lapply(function(dt) {
@@ -86,17 +89,25 @@ get_fastest_station <- function(origins,
     }) %>%
     bind_rows()
   
-  #Take the average time for each centroid-station pair, and then take the shortest time for each centroid
-  fastest_station <- ttm_combined %>%
+  #Take average time for each centroid-station pair
+  average_times <- ttm_combined %>%
     group_by(from_id, to_id) %>%
-    summarise(mean_travel_time = mean(travel_time_p50, na.rm = TRUE), .groups = "drop") %>%
-    group_by(from_id) %>%
-    slice_min(mean_travel_time, with_ties = FALSE)
+    summarise(mean_travel_time = mean(travel_time_p50, na.rm = TRUE), .groups = "drop")
   
-  return(fastest_station)
+  #Find the shortest time for each centroid
+  fastest <- average_times %>%
+    group_by(from_id) %>%
+    slice_min(mean_travel_time, with_ties = FALSE) %>%
+    ungroup()
+  
+  #Alter output based on return_fastest_station status
+  if (return_fastest_station) {
+    return(fastest)} 
+  else {
+    return(fastest %>% dplyr::select(from_id, mean_travel_time))}
 }
 
-fastest_station <- get_fastest_station(origins = pop_centroids, destinations = all_stations)
+fastest_station <- get_fastest_station(origins = pop_centroids, destinations = all_stations, return_fastest_station=TRUE)
 
 #Get centroids missing from the ttm
 missing_centroids <- pop_centroids %>%
@@ -104,7 +115,8 @@ missing_centroids <- pop_centroids %>%
 fastest_station2 <- get_fastest_station(
   origins = missing_centroids,
   destinations = all_stations,
-  max_trip_duration=300)
+  max_trip_duration=300,
+  return_fastest_station=TRUE)
 
 fastest_station <- rbind(fastest_station, fastest_station2)
 summary(fastest_station$mean_travel_time)
@@ -141,13 +153,14 @@ r5r_core <- setup_r5(data_path = "final_r5r_notube", verbose=TRUE)
 #Use modified GTFS to work out time to step-free station:
 
 #1) Ceteris paribus - walk speed the same
-fastest_accessible_station1 <- get_fastest_station(origins = pop_centroids, destinations = accessible_stations)
+fastest_accessible_station1 <- get_fastest_station(origins = pop_centroids, destinations = accessible_stations, return_fastest_station=TRUE)
 missing_centroids <- pop_centroids %>%
   filter(!id %in% fastest_accessible_station1$from_id)
 fastest_station2 <- get_fastest_station(
   origins = missing_centroids,
   destinations = accessible_stations,
-  max_trip_duration=500)
+  max_trip_duration=500,
+  return_fastest_station=TRUE)
 fastest_accessible_station1 <- rbind(fastest_accessible_station1, fastest_station2)
 summary(fastest_accessible_station1$mean_travel_time)
 
@@ -175,28 +188,25 @@ summary(fastest_accessible_stationWALK_CP$mean_travel_time)
 #Join to one dataframe
 fastest_time_to_stations <- study_lsoas %>%
   left_join(., fastest_station, by = c("lsoa21cd" = "from_id"))%>%
-  rename("mean_fastest_station" = mean_travel_time)%>%
-  dplyr::select(-to_id)%>%
+  rename("mean_fastest_station" = mean_travel_time,
+         "fastest_station" = to_id)%>%
   left_join(., fastest_accessible_station1, by = c("lsoa21cd" = "from_id"))%>%
-  rename("mean_accessible_stationCP" = mean_travel_time)%>%
-  dplyr::select(-to_id)%>%
+  rename("mean_accessible_stationCP" = mean_travel_time,
+         "fastest_accessible_station" = to_id)%>%
   left_join(., fastest_accessible_station2, by = c("lsoa21cd" = "from_id"))%>%
   rename("mean_accessible_stationSLOW" = mean_travel_time)%>%
-  dplyr::select(-to_id)%>%
   left_join(., fastest_stationWALK, by = c("lsoa21cd" = "from_id"))%>%
   rename("mean_fastest_stationWALK" = mean_travel_time)%>%
-  dplyr::select(-to_id)%>%
   left_join(., fastest_accessible_stationWALK_CP, by = c("lsoa21cd" = "from_id"))%>%
   rename("mean_accessible_stationWALK_CP" = mean_travel_time)%>%
-  dplyr::select(-to_id)
 
 #Calculate fastest accessible station by walking, with the slower walking distance
 #This will be the same route as mean_accessible_stationWALK_CP, so we don't need to run the routing again
 fastest_time_to_stations <- fastest_time_to_stations %>%
   mutate(mean_accessible_stationWALK_SLOW = round((mean_accessible_stationWALK_CP * 1.4) / 0.43, 1))
 
-st_write(fastest_time_to_stations, "data_export_vis/fastest_time_to_stations.gpkg")
-#fastest_time_to_stations <- st_read("data_export_vis/fastest_time_to_stations.gpkg")
+st_write(fastest_time_to_stations, "data_export_vis/fastest_time_to_stations2.gpkg")
+#fastest_time_to_stations <- st_read("data_export_vis/fastest_time_to_stations2.gpkg")
 
 # ---- Quick summary stats --------
 
@@ -889,7 +899,7 @@ names(fastest_time_to_stations)[
 
 #Need to add some slight noise to the data so we can add quantiles
 bivariate_data <- fastest_time_to_stations %>%
-  select(lsoa21cd, ratioCP, step_free_benefit_indexW)%>%
+  dplyr::select(lsoa21cd, ratioCP, step_free_benefit_indexW)%>%
   mutate(ratioCP_jitter = jitter(ratioCP, amount = 1e-6)) #ChatGPT helped!
 
 bi_data <- bi_class(bivariate_data, x = ratioCP_jitter, y = step_free_benefit_indexW, style = "quantile", dim = 4)
@@ -1010,7 +1020,7 @@ ggplot(sil_data, aes(x = k, y = avg_sil)) +
   geom_line(color = "deeppink3", size=0.5, linetype="dashed") + 
   scale_x_continuous(breaks = 2:max_k)+
   labs(
-    title = "Silhouette Analysis",
+    title = "Cluster Silhouette Analysis",
     x = "Number of clusters",
     y = "Average silhouette width") +
   theme_minimal() +
@@ -1030,7 +1040,7 @@ plot(dend_plot)
 cluster_vars <- mutate(cluster_vars, cluster = tree_cut)
 
 #Plot transformed clusters
-cols <- brewer.pal(7, "Dark2")
+cols <- brewer.pal(6, "Dark2")
 ggplot(cluster_vars, aes(x=ratioSLOW_boxcox, y=step_free_benefit_indexW, color = factor(cluster)))+
   geom_point()+
   labs(title = "Transformed Cluster Output",
@@ -1098,52 +1108,130 @@ tmap_save(
   filename = "maps/ratio_pop_clusters.png",
   dpi=300)
 
-#Redo
-cluster_vars <- cluster_vars %>%
-  dplyr::select(-cluster)
+# cluster_vars <- cluster_vars %>%
+#   dplyr::select(-cluster)
 
-#To do:
-  # - Finish map - add on stations?
-  # - Might have to do ratioCP instead as that's what I have for the bivariate map
+#Note I haven't done it with ratioCP as I couldn't create enough distance between the ratios of 1 and other values
 
 # ---- Overlaps with stations ------
 
-#Extract high-high areas
-HH_CP <- fastest_time_to_stations %>% filter(hs_CP == "High-High")
-HH_SLOW <- fastest_time_to_stations %>% filter(hs_SLOW == "High-High")
+#Join data
+station_catchments <- fastest_time_to_stations %>%
+  dplyr::select(lsoa21cd, lsoa21nm, fastest_station, ratioCP, ratioSLOW) %>%
+  left_join(cluster_vars %>% st_drop_geometry() %>% dplyr::select(lsoa21cd, cluster), by = "lsoa21cd")%>%
+  left_join(pop_centroids %>% dplyr::select(id, total_pop, total_under_5, total_65_plus, total_disabled), by = c("lsoa21cd" = "id"))%>%
+  mutate(total_in_need_pop = total_under_5 + total_65_plus + total_disabled)%>%
+  dplyr::select(-total_under_5, -total_65_plus, -total_disabled)%>%
+  left_join(tube_stations_main %>% dplyr::select(stop_id, stop_name, classification, upgrade_status)%>%st_drop_geometry(), by=c("fastest_station"="stop_id"))
+  
+station_catchments_summary <- station_catchments %>%
+  group_by(fastest_station, stop_name, classification, upgrade_status) %>%
+  summarise(
+    total_population = sum(total_pop),
+    total_in_need_population = sum(total_in_need_pop),
+    total_in_need_cluster_5 = sum(total_in_need_pop[cluster == 5]),
+    total_in_need_cluster_4_or_5 = sum(total_in_need_pop[cluster %in% c(4, 5)]),
+    mean_ratioCP = mean(ratioCP),
+    mean_ratioSLOW = mean(ratioSLOW))%>%
+  mutate(pct_in_need = 100*total_in_need_population/total_population)%>%
+  filter(classification != "Fully Accessible")
 
+#We can see that the stations TfL are currently exploring typically have larger catchment populations
+#But not necessarily high disparities
+
+#Compare stations TfL are exploring to the rest
+station_catchments_summary <- station_catchments_summary %>%
+  mutate(upgrade_status2 = if_else(upgrade_status == "No Plans", "No Plans", "Potential Upgrade"))
+
+#Pivot data for faceted violin plot
+labels <- c(
+  total_population = "Total Population",
+  total_in_need_population = "In-Need Population",
+  pct_in_need = "Proportion of In-Need Population",
+  total_in_need_cluster_5 = "In-Need Population, Cluster 5",
+  total_in_need_cluster_4_or_5 = "In-Need Population, Clusters 4 & 5",
+  mean_ratioCP = "Mean Accessibility Ratio",
+  mean_ratioSLOW = "Mean Accessibility Ratio, \nSlower Walking Speed")
+numeric_vars <- station_catchments_summary %>%
+  st_drop_geometry() %>%
+  dplyr::select(fastest_station, upgrade_status2, where(is.numeric)) %>%
+  pivot_longer(
+    cols = where(is.numeric),
+    names_to = "variable",
+    values_to = "value")%>%
+  mutate(
+    variable = factor(variable, levels = names(labels), labels = labels))
+
+#Create violin plot faceted by variable, split by upgrade_status2
+ggplot(numeric_vars, aes(x = upgrade_status2, y = value, fill = upgrade_status2)) +
+  geom_violin(trim = FALSE) +
+  stat_summary(aes(color = upgrade_status2),
+               fun = median,
+               geom = "crossbar",
+               linetype = "dashed",
+               size = 0.2,
+               show.legend = FALSE) +
+  facet_wrap(~ variable, scales = "free_y", ncol=2) +
+  scale_fill_brewer(palette = "Set1")+
+  guides(color = "none") +
+  theme_minimal() +
+  labs(
+    title = "Catchment Properties of Non-Fully-Accessible Stations",
+    x = NULL,
+    y = "Value",
+    fill = "Upgrade Status",
+    caption = "Dashed lines represent distribution medians.") +
+  theme(
+    axis.text.x = element_blank(),  
+    axis.ticks.x = element_blank(), 
+    legend.position = c(0.7, 0.13),
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
+    axis.title = element_text(family = "Segoe UI Semibold", size=10),
+    axis.text = element_text(family = "Segoe UI", size=9),
+    legend.title = element_text(family = "Segoe UI Semibold", size = 10),
+    legend.text = element_text(family = "Segoe UI", size = 9),
+    strip.text = element_text(family = "Segoe UI", size = 9),
+    plot.caption = element_text(family = "Segoe UI Light", size = 8, hjust=0))
+
+#Quick cluster map with stations
 tmap_mode("view")
-tm_shape(HH_SLOW)+
-  tm_polygons()+
+tm_shape(cluster_vars)+
+  tm_polygons("cluster", alpha=0.8, border.alpha=0)+
+  tm_shape(boroughs)+
+  tm_polygons(lwd=0.5, fill=NA, alpha=0)+
   tm_shape(tube_stations_main %>% filter(classification != "Fully Accessible"))+
   tm_dots(col="upgrade_status", palette="Dark2")
-#How to choose? Lots of stations are close by but not in the HH areas
-#Could do a buffer?
+  
 
-#To explore bivariate choropleth manually:
-tmap_mode("view")
-tm_shape(bi_data) +
-  tm_polygons("bi_class",
-              palette = pal,
-              border.alpha = 0,
-              legend.show = FALSE) +
-  tm_shape(boroughs)+
-  tm_polygons(lwd=1, fill=NA, alpha=0)+
-  tm_shape(tube_stations_main)+
-  tm_dots(fill="classification")
+# #To explore bivariate choropleth manually:
+# tmap_mode("view")
+# tm_shape(bi_data) +
+#   tm_polygons("bi_class",
+#               palette = pal,
+#               border.alpha = 0,
+#               legend.show = FALSE) +
+#   tm_shape(boroughs)+
+#   tm_polygons(lwd=1, fill=NA, alpha=0)+
+#   tm_shape(tube_stations_main)+
+#   tm_dots(fill="classification")
 
 
-#To do:
-# - Identify overlaps with inaccessible stations
-  # - Compare to TfL list?
-  # - Could I add vehicle ownership as a factor in the index?
-# - Run OTP directly in Java!
+#To do/ask Duncan:
+# - Identify ideal stations
+  # - Should I add bivariate LISA to the assessment?
+# - Run OTP directly in Java?!
   #  java -Xmx2G -jar otp-2.2.0-shaded.jar --load graphs/accessible --serve
   # - Or a for-loop, but unlikely to run on time
-# - Extra r5r scenarios - no interchanges?
+  # - Or healthcare access? But dataset issues
+# - Represent network as GTFS and calculate centrality?
+  # - Ask Duncan: level of detail needed? e.g. buses as well, pathways.txt?
+# - New scenarios?
+# - Are my clusters shit? Better ways to identify key stations?
+# - To reduce issue: could I change study area to a 1km buffer outside London?
+  # - Would have to redo maps
 
-#Need to consider the issue that detailed_itineraries provides more realistic travel times than travel_time_matrix
-#Hence some LSOAs having unexpectedly long walks
+#Need to consider the issue that some travel times are really unrealistic
+#Links to very long walks due to remote centroids, a lack of non-TfL PT, and certain roads which are non-pedestrian-accessible
 
 #Note "fastest" may not actually be in practice - consider issues for PwMD on buses, e.g. no space, ramps
 #Or closest accessible may not actually be ideal - e.g. further away from Zone 1
