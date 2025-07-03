@@ -260,6 +260,7 @@ avg_diffSLOW_WALK <- sum(calculationsWALK$diffSLOWmultiplied)/total_disabled
 print(avg_diffCP_WALK)
 print(avg_diffSLOW_WALK)
 #So the rest of the PT network, e.g. bus, tram, DLR, is doing a lot of the heavy lifting
+#Note this means that journeys for PwMD are more often multi-modal, complex, etc. - could be a deterrent
 
 #Proportion of population living within 20 min of a station
 pop_proportions <- fastest_time_to_stations %>%
@@ -285,6 +286,7 @@ pct_under_20min_disabledSLOW = pop_proportions %>%
 pct_under_20min_non_disabled
 pct_under_20min_disabledCP
 pct_under_20min_disabledSLOW
+#Shows journey planner walking speed assumptions are bad
 
 # ---- Display results -----
 
@@ -1113,7 +1115,7 @@ tmap_save(
 
 #Note I haven't done it with ratioCP as I couldn't create enough distance between the ratios of 1 and other values
 
-# ---- Overlaps with stations ------
+# ---- Station Catchment Analysis ------
 
 #Join data
 station_catchments <- fastest_time_to_stations %>%
@@ -1202,6 +1204,8 @@ tm_shape(cluster_vars)+
   tm_shape(tube_stations_main %>% filter(classification != "Fully Accessible"))+
   tm_dots(col="upgrade_status", palette="Dark2")
   
+# ---- Prioritise stations -----
+#XXX multi-criteria analysis - many variables, ranked or z-score weighted?
 
 # #To explore bivariate choropleth manually:
 # tmap_mode("view")
@@ -1216,19 +1220,24 @@ tm_shape(cluster_vars)+
 #   tm_dots(fill="classification")
 
 
-#To do/ask Duncan:
+#To do:
 # - Identify ideal stations
-  # - Should I add bivariate LISA to the assessment?
+  # - Could do a multi-criteria analysis
 # - Run OTP directly in Java?!
   #  java -Xmx2G -jar otp-2.2.0-shaded.jar --load graphs/accessible --serve
   # - Or a for-loop, but unlikely to run on time
   # - Or healthcare access? But dataset issues
-# - Represent network as GTFS and calculate centrality?
-  # - Ask Duncan: level of detail needed? e.g. buses as well, pathways.txt?
+# - Or basic r5r where all non-fully-accessible stations are totally removed?
 # - New scenarios?
-# - Are my clusters shit? Better ways to identify key stations?
-# - To reduce issue: could I change study area to a 1km buffer outside London?
-  # - Would have to redo maps
+  # - Compare shortlisted
+  # - Top tube stations by usage
+  # - Compare centrality measure (simplified network - e.g. no buses, accessibility binary)
+  # - Top catchment - clusters
+  # - How to assess?
+#Clustering
+  # - Could I do an easier variable?
+  # - Find areas with a high proportion of in-need population which might be missed by TfL's approach
+# - Redo upgrade status map with borough boundaries instead of LSOAs
 
 #Need to consider the issue that some travel times are really unrealistic
 #Links to very long walks due to remote centroids, a lack of non-TfL PT, and certain roads which are non-pedestrian-accessible
