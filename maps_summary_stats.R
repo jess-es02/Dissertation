@@ -359,7 +359,7 @@ gtfs_stops <- gtfs_stops %>%
     lines = str_split(all_lines, "\\|"))%>%
   unnest(lines) %>% #if multiple lines, add new row
   distinct(parent_station, lines, .keep_all = TRUE)%>%
-  select(stop_name.x, lines, classification, upgrade_status, geometry)%>%
+  dplyr::select(stop_name.x, lines, classification, upgrade_status, geometry)%>%
   rename("stop_name" = stop_name.x)
 
 gtfs_stops <- gtfs_stops %>%
@@ -367,6 +367,13 @@ gtfs_stops <- gtfs_stops %>%
 
 gtfs_stops <- gtfs_stops %>%
   filter(lines != "Rail")
+
+#Sort out Waterloo and City and Hammersmith and City!
+gtfs_stops <- gtfs_stops %>%
+  mutate(lines = if_else(lines == "City" & stop_name == 'Waterloo Underground Station', "Waterloo & City", lines),
+         lines = if_else(lines == "City" & stop_name == 'Bank Underground Station', "Waterloo & City", lines))
+gtfs_stops <- gtfs_stops %>%
+  mutate(lines = if_else(lines == 'City', 'Hammersmith & City', lines))
   
 #Create stacked bar chart
 mapping <- c(
@@ -394,4 +401,4 @@ ggplot(gtfs_stops, aes(x = lines, fill = classification)) +
         legend.title = element_text(family = "Segoe UI Semibold", size=11),
         legend.text = element_text(family = "Segoe UI", size=9))
 #Add note that it's about overall station classification, not the platforms for that line
-rm(mapping, gtfs_stops)
+rm(mapping)
