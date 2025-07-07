@@ -13,6 +13,8 @@
   # - Accessibility ratio (CP and slower walking speed)
   # - Local spatial autocorrelation
   # - Bivariate LISA
+# 3) gtfs_network
+  # - Shortlisted stations
 
 library(tidyverse)
 library(sf)
@@ -174,9 +176,9 @@ to_trips <- gtfs$routes %>%
   left_join(., gtfs$trips, by ="route_id")%>%
   distinct()
 stops_no_lizzie <- to_trips %>%
-  select(trip_id)%>%
+  dplyr::select(trip_id)%>%
   left_join(., gtfs$stop_times, by="trip_id")%>%
-  select(stop_id)%>%
+  dplyr::select(stop_id)%>%
   distinct()%>%
   left_join(., gtfs$stops, by="stop_id")%>%
   mutate(parent_station = if_else(stop_id == 'BATRSPK', 'BATRSPK', parent_station))%>% #fix battersea park
@@ -256,7 +258,51 @@ tm_shape(study_lsoas) +
   filename = "maps/study_area.png",
   dpi=300)
 
+#The same, but without LSOA boundaries
+tmap_save(
+  tm_shape(study_lsoas) +
+    tm_polygons(col = "cadetblue", 
+                alpha=0.3,
+                border.col = NA,
+                border.alpha=0) +
+    tm_add_legend(type = "polygons",
+                  labels = "Study Area",
+                  fill = "cadetblue") +
+    tm_shape(boroughs)+
+    tm_polygons(fill=NA, alpha=0, lwd=1.1)+
+    tm_shape(stops_no_lizzie) +
+    tm_dots(col = "white", 
+            border.col="black",
+            col.legend = tm_legend(title = ""),
+            shape=21,
+            size=0.6) +
+    tm_add_legend(type = "dots",
+                  labels = "Stations",
+                  col="black") +
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Research Area of Interest") +
+    tm_compass(type = "8star", 
+               size = 3, 
+               position = c(0.9, 0.22)) +
+    tm_scalebar(position = c(0.82, 0.08), 
+                text.size = 0.7, 
+                breaks = c(0, 5, 10))+
+    tm_layout(legend.position = c("left", "bottom"), 
+              legend.bg.color="white",
+              title.fontfamily = "Segoe UI Semibold",
+              title.size = 1.6,
+              legend.text.fontfamily = "Segoe UI",
+              legend.title.fontfamily = "Segoe UI Semibold",
+              legend.text.size = 1.1,   
+              legend.title.size = 1.1),
+  filename = "maps/study_areaBOROUGHS.png",
+  dpi=300)
+
 #The same, but mapped according to station classification
+mapping <- c(
+  "Fully Accessible" = "darkgreen",
+  "Partially Accessible" = "gold",
+  "Inaccessible" = "red")
 tmap_save(
   tm_shape(study_lsoas) +
     tm_polygons(col = "cadetblue", 
@@ -289,6 +335,41 @@ tmap_save(
               legend.text.size = 0.9,   
               legend.title.size = 1),
   filename = "maps/study_area_station_classified.png",
+  dpi=300)
+
+tmap_save(
+  tm_shape(study_lsoas) +
+    tm_polygons(col = "cadetblue", 
+                alpha=0.3,
+                border.alpha = 0) +
+    tm_add_legend(type = "polygons",
+                  labels = "Study Area",
+                  fill = "cadetblue") +
+    tm_shape(boroughs)+
+    tm_polygons(fill=NA, alpha=0, lwd=1)+
+    tm_shape(stops_no_lizzie) +
+    tm_dots(fill = "classification", 
+            fill.scale = tm_scale_categorical(values = mapping),
+            fill.legend = tm_legend(title = "Station"),
+            shape=21,
+            size=0.6) +
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Research Area of Interest") +
+    tm_compass(type = "8star", 
+               size = 3, 
+               position = c(0.9, 0.22)) +
+    tm_scalebar(position = c(0.82, 0.08), 
+                text.size = 0.7, 
+                breaks = c(0, 5, 10))+
+    tm_layout(legend.position = c("left", "bottom"), 
+              legend.bg.color="white",
+              title.fontfamily = "Segoe UI Semibold",
+              title.size = 1.6,
+              legend.text.fontfamily = "Segoe UI",
+              legend.title.fontfamily = "Segoe UI Semibold",
+              legend.text.size = 0.9,   
+              legend.title.size = 1),
+  filename = "maps/study_area_station_classifiedBOROUGHS.png",
   dpi=300)
 
 # ----- Map Upgrade Plans -------
@@ -333,6 +414,39 @@ tmap_save(
               legend.title.size = 1),
   filename = "maps/tfl_upgrade_plans.png",
   dpi=300)
+
+tmap_save(
+  tm_shape(study_lsoas) +
+    tm_polygons(col = "cadetblue", 
+                alpha=0.2,
+                border.alpha = 0) +
+    tm_shape(boroughs)+
+    tm_polygons(fill=NA, alpha=0, lwd=1.2)+
+    tm_shape(tube_stations_main) +
+    tm_dots(fill = "upgrade_status", 
+            fill.scale = tm_scale_categorical(values = mapping),
+            fill.legend = tm_legend(title = "Upgrade Status"),
+            shape=21,
+            size=0.6) +
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Stations by TfL Step-Free Upgrade Status") +
+    tm_compass(type = "8star", 
+               size = 3, 
+               position = c(0.9, 0.22)) +
+    tm_scalebar(position = c(0.82, 0.08), 
+                text.size = 0.7, 
+                breaks = c(0, 5, 10))+
+    tm_layout(legend.position = c("left", "bottom"), 
+              legend.bg.color="white",
+              title.fontfamily = "Segoe UI Semibold",
+              title.size = 1.6,
+              legend.text.fontfamily = "Segoe UI",
+              legend.title.fontfamily = "Segoe UI Semibold",
+              legend.text.size = 0.9,   
+              legend.title.size = 1),
+  filename = "maps/tfl_upgrade_plansBOROUGHS.png",
+  dpi=300)
+
 rm(mapping)
 
 # ------- Station Classification Summary Statistics ------
