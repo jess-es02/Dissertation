@@ -4,6 +4,8 @@
   # - Simplify the TfL network to tube/rail only, and represent it as a graph
   # - Remove non-step-free stations (while ensuring that links between step-free stations are preserved)
   # - Iteratively add stations to the base graph and calculate betweenness/information centrality
+  # - Rank top stations, and compare their properties with the stations shortlisted by TfL
+  # - Map stations
 
 #Note considerable simplifications:
   # - Only considering tube, Overground, and Lizzie lines (when we know buses play a key role in reducing disparities)
@@ -284,22 +286,268 @@ node_betweenness <- map2_dbl(all_graphs, new_nodes,
 total_efficiency <- map2_dbl(all_graphs, new_nodes,
                              ~ global_efficiency(
                                .x,
-                               weights = cost_weights(.x)))
+                               weights = cost_weights(.x),
+                               directed=TRUE))
 
-#Find initial efficiency with only step-free networks
-initial_efficiency <- global_efficiency(G_base, weights = cost_weights(G_base))
+#Average path length
+avg_path_length <- map2_dbl(all_graphs, new_nodes,
+                             ~ mean_distance(
+                               .x,
+                               weights=cost_weights(.x),
+                               directed=TRUE))
+
+#Find initial values, with only step-free networks
+initial_efficiency <- global_efficiency(G_base, weights = cost_weights(G_base), directed=TRUE)
+initial_avg_path_length <- mean_distance(G_base, weights=cost_weights(G_base), directed=TRUE)
 
 #Combine measures, calculate efficiency change
 graph_node_change <- tibble(
   node = new_nodes,
   node_betweenness = node_betweenness,
+  avg_path_length = avg_path_length,
   global_efficiency = total_efficiency)%>%
-  mutate(efficiency_change = initial_efficiency-global_efficiency)
+  mutate(efficiency_change = global_efficiency-initial_efficiency,
+         avg_path_length_change = avg_path_length-initial_avg_path_length)
 
-#write.csv(graph_node_change, file="data_export_vis/graph_node_change.csv")
+# ------ Rank Stations ------
 
-#To do:
-  # - Consider what metrics to include
-    # - Is global efficiency actually relevant, if we don't know where info still isn't going because we're not accounting for the removed nodes?
-  # - Rank/choose top stations
-  # - Map
+#So we want:
+  #1) Higher node betweenness centrality
+  #2) Higher change in global efficiency
+  #3) Greater decrease in average path length
+
+#Find top 8 for each
+graph_node_change <- graph_node_change %>%
+  mutate(betweenness_top8 = rank(desc(node_betweenness)) <= 8,
+         global_efficiency_top8 = rank(desc(efficiency_change)) <= 8,
+         avg_path_length_top8 = rank(avg_path_length_change) <= 8)
+
+#Take z-scores and find top 8 too
+graph_node_change <- graph_node_change %>%
+  mutate(across(
+    c(node_betweenness, efficiency_change, avg_path_length_change),
+    ~ as.numeric(scale(.)),
+    .names = "z_{.col}"))
+
+#Reverse average path length change, as greater decrease = better
+graph_node_change <- graph_node_change %>%
+  mutate(z_avg_path_length_change = -1*avg_path_length_change)
+
+#Get top 8
+graph_node_change <- graph_node_change %>%
+  mutate(top_overall_stations = z_node_betweenness + z_efficiency_change + z_avg_path_length_change,
+         overall_top8 = rank(desc(top_overall_stations)) <= 8)
+
+#Print results
+graph_node_change <- graph_node_change %>%
+  left_join(tube_stations_main %>% st_drop_geometry(), by=c("node"="stop_id"))%>%
+  dplyr::select(node, stop_name, fare_zones, classification, upgrade_status, node_betweenness,
+                avg_path_length, avg_path_length_change, global_efficiency, efficiency_change, 
+                z_node_betweenness, z_avg_path_length_change, z_efficiency_change, top_overall_stations,
+                betweenness_top8, avg_path_length_top8, global_efficiency_top8, overall_top8)
+write.csv(graph_node_change, file="data_export_vis/graph_node_change.csv")
+
+top_8_betweenness <- graph_node_change %>%
+  filter(betweenness_top8)%>%
+  dplyr::select(node, stop_name, fare_zones, classification, upgrade_status, node_betweenness, avg_path_length_top8, global_efficiency_top8, overall_top8)%>%
+  arrange(desc(node_betweenness)) 
+#All zone 1 or 2 - unlikely TfL would undertake
+#Most included in top 8 - seems to dominate
+
+top_8_APL <- graph_node_change %>%
+  filter(avg_path_length_top8)%>%
+  dplyr::select(node, stop_name, fare_zones, classification, upgrade_status, avg_path_length_change, betweenness_top8, global_efficiency_top8, overall_top8)%>%
+  arrange(avg_path_length_change)
+#Only 2 included in top 8 - less variance compared to others
+#Only 1 considered by TfL, and it has stalled
+
+top_8_efficiency <- graph_node_change %>%
+  filter(global_efficiency_top8)%>%
+  dplyr::select(node, stop_name, fare_zones, classification, upgrade_status, efficiency_change, betweenness_top8, avg_path_length_top8, overall_top8)%>%
+  arrange(desc(efficiency_change))
+#Slight less geographic concentration
+#Less explored by TfL!
+
+top_8_overall <- graph_node_change %>%
+  filter(overall_top8)%>%
+  dplyr::select(node, stop_name, fare_zones, classification, upgrade_status, top_overall_stations, betweenness_top8, avg_path_length_top8, global_efficiency_top8)%>%
+  arrange(desc(top_overall_stations))
+#TfL is also not exploring any of these
+#Big jump after Aldgate East
+#Note geographic concentration of these
+
+# ----- Compare to TfL's choices -----
+
+#Betweenness
+top_8_betweenness_avg <- mean(top_8_betweenness$node_betweenness)
+overall_top_8_betweess_avg <- graph_node_change %>%
+  filter(overall_top8) %>%
+  summarise(mean_betweenness = mean(node_betweenness))%>%
+  pull(mean_betweenness)
+tfl_evaluation_betweenness_avg <- graph_node_change %>%
+  filter(upgrade_status == 'Under Evaluation') %>%
+  summarise(mean_betweenness = mean(node_betweenness))%>%
+  pull(mean_betweenness)
+tfl_underway_stalled_betweenness_avg <- graph_node_change %>%
+  filter(upgrade_status %in% c('Project Underway', 'Project Stalled')) %>%
+  summarise(mean_betweenness = mean(node_betweenness))%>%
+  pull(mean_betweenness)
+
+top_8_betweenness_avg #0.2781044
+overall_top_8_betweess_avg #0.2589847
+tfl_evaluation_betweenness_avg #0.01677108
+tfl_underway_stalled_betweenness_avg #0.04451955
+
+#APL Change
+top_8_APL_avg <- mean(top_8_APL$avg_path_length_change)
+overall_top_8_APL_avg <- graph_node_change %>%
+  filter(overall_top8) %>%
+  summarise(mean_APL_change = mean(avg_path_length_change))%>%
+  pull(mean_APL_change)
+tfl_evaluation_APL_avg <- graph_node_change %>%
+  filter(upgrade_status == 'Under Evaluation') %>%
+  summarise(mean_APL_change = mean(avg_path_length_change))%>%
+  pull(mean_APL_change)
+tfl_underway_stalled_APL_avg <- graph_node_change %>%
+  filter(upgrade_status %in% c('Project Underway', 'Project Stalled')) %>%
+  summarise(mean_APL_change = mean(avg_path_length_change))%>%
+  pull(mean_APL_change)
+
+top_8_APL_avg #-0.00354567
+overall_top_8_APL_avg #-0.002053026
+tfl_evaluation_APL_avg #-0.0007065138
+tfl_underway_stalled_APL_avg #0.01165389 - would actually lead to an increase in APL (though not necessarily bad - more peripheral nodes = longer routes)
+
+#Efficiency Change
+top_8_efficiency_avg <- mean(top_8_efficiency$efficiency_change)
+overall_top_8_efficiency_avg <- graph_node_change %>%
+  filter(overall_top8) %>%
+  summarise(mean_efficiency_change = mean(efficiency_change))%>%
+  pull(mean_efficiency_change)
+tfl_evaluation_efficiency_avg <- graph_node_change %>%
+  filter(upgrade_status == 'Under Evaluation') %>%
+  summarise(mean_efficiency_change = mean(efficiency_change))%>%
+  pull(mean_efficiency_change)
+tfl_underway_stalled_efficiency_avg <- graph_node_change %>%
+  filter(upgrade_status %in% c('Project Underway', 'Project Stalled')) %>%
+  summarise(mean_efficiency_change = mean(efficiency_change))%>%
+  pull(mean_efficiency_change)
+
+top_8_efficiency_avg #0.4132295
+overall_top_8_efficiency_avg #0.3571965
+tfl_evaluation_efficiency_avg #-0.01847125 !
+tfl_underway_stalled_efficiency_avg #-0.03059623
+
+# ---- Maps -----
+
+#1) Top 8 for each category
+graph_node_change <- graph_node_change %>%
+  mutate(
+    top_8_category = case_when(
+      betweenness_top8 == TRUE & avg_path_length_top8 == FALSE & global_efficiency_top8 == FALSE ~ "Betweenness",
+      betweenness_top8 == FALSE & avg_path_length_top8 == TRUE & global_efficiency_top8 == FALSE ~ "APL",
+      betweenness_top8 == FALSE & avg_path_length_top8 == FALSE & global_efficiency_top8 == TRUE ~ "Efficiency",
+      betweenness_top8 == TRUE & avg_path_length_top8 == TRUE & global_efficiency_top8 == FALSE ~ "Betweenness, APL",
+      betweenness_top8 == TRUE & avg_path_length_top8 == FALSE & global_efficiency_top8 == TRUE ~ "Betweenness, Efficiency",
+      betweenness_top8 == FALSE & avg_path_length_top8 == TRUE & global_efficiency_top8 == TRUE ~ "APL, Efficiency",
+      betweenness_top8 == TRUE & avg_path_length_top8 == TRUE & global_efficiency_top8 == TRUE ~ "All",
+      TRUE ~ NA))
+graph_node_change_map <- graph_node_change %>%
+  left_join(tube_stations_main %>% dplyr::select(stop_id, geometry), by=c("node"="stop_id"))%>%
+  dplyr::select(node, top_8_category, overall_top8, geometry)%>%
+  st_as_sf()
+
+mapping <- c("Betweenness" = "#9f13eb", 
+             "APL" = "#4287f5",
+             "Efficiency" = "#26c71e",
+             "Betweenness, Efficiency" = "#dbb13b",
+             "Betweenness, APL" = "#75ecf0", 
+             "APL, Efficiency" = "#f0b1d7", 
+             "All" = "#d41e11")
+
+tmap_mode("plot")
+tmap_options(component.autoscale = TRUE)
+tmap_save(
+  tm_shape(boroughs)+
+    tm_polygons(fill=NA, alpha=0, lwd=1.5)+
+  tm_shape(tube_stations_main)+
+    tm_dots(col = "#d9d9d9", 
+            shape=21,
+            size=0.4,
+            alpha=1,
+            border.alpha=0.5)+
+    tm_shape(graph_node_change_map%>%filter(!is.na(top_8_category)))+
+    tm_dots(fill = "top_8_category", 
+            fill.scale = tm_scale_categorical(values = mapping),
+            fill.legend = tm_legend(title = "Metric"),
+            shape=21,
+            size=0.6)+
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Top Stations by Graph Connectivity Measures") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.88, 0.22)) +
+    tm_scalebar(
+      position = c(0.80, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)
+    ) +
+    tm_layout(
+      legend.outside = TRUE,
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.6,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/graph_top_8_categories.png",
+  dpi=300)
+
+#2) Overall top 8
+tmap_save(
+  tm_shape(boroughs)+
+    tm_polygons(fill=NA, alpha=0, lwd=1.5)+
+    tm_shape(tube_stations_main)+
+    tm_dots(col = "#d9d9d9", 
+            shape=21,
+            size=0.4,
+            alpha=1,
+            border.alpha=0.5)+
+    tm_shape(graph_node_change_map%>%filter(overall_top8))+
+    tm_dots(fill = "coral1",
+            shape=21,
+            size=0.7)+
+    tm_basemap("Esri.OceanBasemap") +
+    tm_title("Overall Top Stations, Network Assessment") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.88, 0.22)) +
+    tm_scalebar(
+      position = c(0.80, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)
+    ) +
+    tm_layout(
+      legend.outside = TRUE,
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.6,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/graph_top_8_overall.png",
+  dpi=300)
+
+#When choosing top 8, we might need to choose a different one if there are three in the same area? 
+
+rm(cost_weights, gtfs_to_igraph, make_test_graph, remove_inaccessible_stations,
+   total_efficiency, top_8_betweenness_avg, top_8_efficiency_avg, top_8_APL_avg,
+   tfl_underway_stalled_APL_avg, tfl_underway_stalled_betweenness_avg, tfl_underway_stalled_efficiency_avg,
+   tfl_evaluation_APL_avg, tfl_evaluation_betweenness_avg, tfl_evaluation_efficiency_avg,
+   overall_top_8_APL_avg, overall_top_8_betweess_avg, overall_top_8_efficiency_avg,
+   non_step_free_nodes, node_betweenness, new_nodes, mapping, initial_efficiency, initial_avg_path_length, avg_path_length,
+   vertices, graph_node_change_map, edges_df, edges_combined)
