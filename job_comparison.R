@@ -1,4 +1,3 @@
-library(opentripplanner)
 library(tmap)
 library(tmaptools)
 library(maptiles)
@@ -83,116 +82,10 @@ morans_i
   #Distribution and LISA facet map?
   #Associations with hospital POI?
 
-# ----- Set up OTP routing -------
-
-#Temporarily switch from Java 21 (for r5r) to 17 (for OTP)
-Sys.setenv(JAVA_HOME = Sys.getenv("JAVA_HOME17"))
-Sys.setenv(PATH = paste0(Sys.getenv("JAVA_HOME"), "/bin;", Sys.getenv("PATH")))
-
-#Set up the OTP directory
-otp_path <- "otp"
-dir.create(otp_path, recursive = TRUE)
-path_otp <- otp_dl_jar(otp_path, cache = TRUE, version = "2.2.0")
-
-#Create directory structure
-dir.create("otp/graphs/standard", recursive = TRUE)
-dir.create("otp/graphs/accessible", recursive = TRUE)
-
-#Next, manually paste the GTFS/accessible GTFS into each
-#Alongside the OSM road network, filtered with osmium
-
-#Build graphs
-
-#Standard
-# log1 <- otp_build_graph(otp = path_otp, dir = otp_path, router = "standard", quiet=FALSE, memory=9216)
-# log2 <- otp_setup(otp = path_otp, dir = otp_path, router="standard")
-# otpcon <- otp_connect()
-# test_route <- otp_plan(otpcon, #Leicester Square to Camden Town
-#                       fromPlace = c(-0.12811, 51.51145),
-#                       toPlace = c(-0.142915, 51.53929),
-#                       mode = c("WALK", "TRANSIT"))
-# qtm(test_route%>%filter(route_option==2)) #all looks good
-# otp_stop()
-
-#Wheelchair accessible
-# log3 <- otp_build_graph(otp = path_otp, dir = otp_path, router = "accessible", quiet=FALSE, memory=9216)
-# log4 <- otp_setup(otp = path_otp, dir = otp_path, router="accessible")
-# otpcon <- otp_connect()
-# routingOptions <- otp_routing_options()
-# routingOptions$wheelchair <- TRUE
-# routingOptions <- otp_validate_routing_options(routingOptions)
-# test_route <- otp_plan(otpcon, #Leicester Square to Camden Town - test non-step-free stations don't work
-#                        fromPlace = c(-0.12811, 51.51145),
-#                        toPlace = c(-0.142915, 51.53929),
-#                        mode = c("WALK", "TRANSIT"),
-#                        routeOptions = routingOptions)
-# test_route <- otp_plan(otpcon, #High Barnet to Tottenham Court Road - test step-free stations still work
-#                        fromPlace = c(-0.1943191, 51.65037),
-#                        toPlace = c(-0.130031, 51.51641),
-#                        mode = c("WALK", "TRANSIT"),
-#                        routeOptions = routingOptions)
-# test_route <- otp_plan(otpcon, #High Barnet to Victoria (change at Euston) - test partially-accessible stations still work
-#                        fromPlace = c(-0.1943191, 51.65037),
-#                        toPlace = c(-0.1439399, 51.49588),
-#                        mode = c("WALK", "TRANSIT"),
-#                        routeOptions = routingOptions)
-# tmap_mode("view")
-# qtm(test_route %>% filter(route_option == 3), col = "leg_mode")
-
-#Configure options
-
-#Standard: no wheelchair, walking speed 1.4m/s, no maximum walk
-routingOptionsS <- otp_routing_options()
-routingOptionsS$walkSpeed <- 1.4
-routingOptionsS <- otp_validate_routing_options(routingOptionsS)
-
-#Wheelchair: wheelchair, walking speed 0.43m/s (Sonenblum et al., 2012)
-routingOptionsW <- otp_routing_options()
-routingOptionsW$walkSpeed <- 0.43
-#routingOptionsW$maxWalkDistance <- 1000
-routingOptionsW$wheelchair <- TRUE
-routingOptionsW <- otp_validate_routing_options(routingOptionsW)
-#Max walk distance cannot be set here - return to this if time
-
+#Removed OTP code - some notes from this:
 #This is all for now, but we could alter speed for electric wheelchairs, for example
 #Or keep speed the same as standard for a ceteris paribus comparison
 #Could also alter walkReluctance, but I am considering what is theoretically possible rather than what is preferable
 #Could add maximum transfers to be more realistic?
 
 # ----- Cumulative opportunities measure -------
-
-#Define origins and destinations
-selected_ids <- head(pop_centroids$id, 2)
-sample_origins <- pop_centroids[pop_centroids$id %in% selected_ids, ]
-sample_destinations <- workforce_centroids[workforce_centroids$id %in% selected_ids, ]
-
-toPlace = sample_destinations[rep(seq(1, nrow(sample_destinations)), times = nrow(sample_destinations)),]
-toPlace <- st_as_sf(toPlace, coords = c("lon", "lat"), crs = 4326) %>%
-  select(id, geometry)
-
-fromPlace = sample_origins[rep(seq(1, nrow(sample_origins)), each  = nrow(sample_origins)),]
-fromPlace <- st_as_sf(fromPlace, coords = c("lon", "lat"), crs = 4326) %>%
-  select(id, geometry)
-
-#Wheelchair
-
-#Load wheelchair object
-log4 <- otp_setup(otp = path_otp, dir = otp_path, router="accessible")
-otpcon <- opentripplanner::otp_connect()
-
-test <- otp_plan(otpcon,
-                 fromPlace = fromPlace,
-                 toPlace = toPlace,
-                 fromID = fromPlace$id,
-                 toID = toPlace$id,
-                 get_geometry = FALSE,
-                 distance_balance = TRUE,
-                 mode = c("WALK", "TRANSIT"),
-                 maxWalkDistance = 500,
-                 routeOptions = routingOptionsW,
-                 numItineraries = 1)%>%
-  group_by(fromPlace, toPlace) %>%
-  summarise(mean_duration = mean(duration, na.rm = TRUE)) %>%
-  ungroup()
-
-#Would need to set date, time, maxWalkDistance, numItineraries
