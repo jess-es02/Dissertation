@@ -109,7 +109,10 @@ cumulative_opportunities <- function(origins,
                                      destinations, 
                                      walk_speed = 1.4, 
                                      max_trip_duration = 46, #i.e. stops at 45
-                                     mode = c("WALK", "TRANSIT")) {
+                                     mode = c("WALK", "TRANSIT"),
+                                     max_rides = 10, #unrealistic, but we just want to see the max!
+                                     max_walk_time = Inf #not perfect, because this is calculated separately for each leg of a trip
+                                     ) {
   
   #Get travel times for each departure time, and combine
   ttm_combined <- departure_times %>%
@@ -122,7 +125,8 @@ cumulative_opportunities <- function(origins,
         departure_datetime = dt,
         walk_speed = walk_speed,
         max_trip_duration = max_trip_duration,
-        max_rides = 10, #unrealistic, but we just want to see the max!
+        max_rides = max_rides,
+        max_walk_time = max_walk_time,
         progress = TRUE
       ) %>%
         mutate(departure_time = dt)
@@ -146,6 +150,12 @@ jobs_standard <- cumulative_opportunities(origins = pop_centroids, destinations 
 jobs_standardWALK <- cumulative_opportunities(origins = pop_centroids, destinations = workforce_centroids, mode=c("WALK"))
 #Note that some of the more rural LSOAs have no jobs within 45 min (even within the LSOA)
 #Means ratios may be misleading - will be 0 diff
+
+#Restrict transfers
+jobs_standard_TR <- cumulative_opportunities(origins = pop_centroids, destinations = workforce_centroids, max_rides = 1)
+
+#Quick run for 20 min only
+jobs_standard20 <- cumulative_opportunities(origins = pop_centroids, destinations = workforce_centroids, max_trip_duration=21)
 
 r5r::stop_r5(r5r_core)
 rJava::.jgc(R.gc = TRUE)
@@ -220,6 +230,17 @@ jobs_accessibleCP_WALK <- cumulative_opportunities(origins = pop_centroids, dest
 jobs_accessibleSLOW <- cumulative_opportunities(origins = pop_centroids, destinations = workforce_centroids, walk_speed = 0.43)
 jobs_accessibleSLOW_WALK <- cumulative_opportunities(origins = pop_centroids, destinations = workforce_centroids, walk_speed = 0.43, mode=c("WALK"))
 
+#Restrict transfers
+jobs_accessibleCP_TR <- cumulative_opportunities(origins = pop_centroids, destinations = workforce_centroids, max_rides=1)
+jobs_accessibleSLOW_TR <- cumulative_opportunities(origins = pop_centroids, destinations = workforce_centroids, walk_speed = 0.43, max_rides=1)
+
+#Restrict walking time
+jobs_accessibleCP_WR <- cumulative_opportunities(origins = pop_centroids, destinations = workforce_centroids, max_walk_time=10)
+jobs_accessibleSLOW_WR <- cumulative_opportunities(origins = pop_centroids, destinations = workforce_centroids, walk_speed = 0.43, max_walk_time=10)
+
+#All constraints: speed, restrict transfers, restrict walking time
+jobs_accessibleSLOW_WRTR <- cumulative_opportunities(origins = pop_centroids, destinations = workforce_centroids, walk_speed = 0.43, max_rides=1, max_walk_time = 10)
+
 #Combine dataframes
 jobs_in_45_min <- study_lsoas %>%
   left_join(jobs_standard, by=c("lsoa21cd"="from_id"))%>%
@@ -234,12 +255,324 @@ jobs_in_45_min <- study_lsoas %>%
   rename("jobs_accessibleCP_WALK" = jobs_45_min)%>%
   left_join(jobs_accessibleSLOW_WALK, by = c("lsoa21cd"="from_id"))%>%
   rename("jobs_accessibleSLOW_WALK" = jobs_45_min)%>%
+  left_join(jobs_standard_TR, by = c("lsoa21cd"="from_id"))%>%
+  rename("jobs_standard_TR" = jobs_45_min)%>%
+  left_join(jobs_accessibleCP_TR, by = c("lsoa21cd"="from_id"))%>%
+  rename("jobs_accessibleCP_TR" = jobs_45_min)%>%
+  left_join(jobs_accessibleSLOW_TR, by = c("lsoa21cd"="from_id"))%>%
+  rename("jobs_accessibleSLOW_TR" = jobs_45_min)%>%
+  left_join(jobs_accessibleCP_WR, by = c("lsoa21cd"="from_id"))%>%
+  rename("jobs_accessibleCP_WR" = jobs_45_min)%>%
+  left_join(jobs_accessibleSLOW_WR, by = c("lsoa21cd"="from_id"))%>%
+  rename("jobs_accessibleSLOW_WR" = jobs_45_min)%>%
+  left_join(jobs_accessibleSLOW_WRTR, by = c("lsoa21cd"="from_id"))%>%
+  rename("jobs_accessibleSLOW_WRTR" = jobs_45_min)%>%
   mutate(across(starts_with("jobs_"), ~ coalesce(., 0)))
 
-st_write(jobs_in_45_min, "data_export_vis/jobs_in_45_min.gpkg")
+st_write(jobs_in_45_min, "data_export_vis/jobs_in_45_min2.gpkg")
 rm(jobs_standard, jobs_accessibleCP, jobs_accessibleSLOW,
-   jobs_standardWALK, jobs_accessibleCP_WALK, jobs_accessibleSLOW_WALK)
+   jobs_standardWALK, jobs_accessibleCP_WALK, jobs_accessibleSLOW_WALK,
+   jobs_standard_TR, jobs_accessibleCP_TR, jobs_accessibleSLOW_TR,
+   jobs_accessibleCP_WR, jobs_accessibleSLOW_WR, jobs_accessibleSLOW_WRTR)
+
+#Quick run for 20 min only
+jobs_accessibleCP_20 <- cumulative_opportunities(origins = pop_centroids, destinations = workforce_centroids, max_trip_duration = 21)
+jobs_accessibleSLOW_20 <- cumulative_opportunities(origins = pop_centroids, destinations = workforce_centroids, max_trip_duration = 21, walk_speed = 0.43)
+
+#Combine 
+jobs_in_20_min <- study_lsoas %>%
+  left_join(jobs_standard20, by=c("lsoa21cd"="from_id"))%>%
+  rename("jobs_standard" = jobs_45_min)%>%
+  left_join(jobs_accessibleCP_20, by = c("lsoa21cd"="from_id"))%>%
+  rename("jobs_accessibleCP" = jobs_45_min)%>%
+  left_join(jobs_accessibleSLOW_20, by = c("lsoa21cd"="from_id"))%>%
+  rename("jobs_accessible_SLOW" = jobs_45_min)%>%
+  mutate(across(starts_with("jobs_"), ~ coalesce(., 0)))
+
+st_write(jobs_in_20_min, "data_export_vis/jobs_in_20_min.gpkg")
+rm(jobs_standard20, jobs_accessibleCP_20, jobs_accessibleSLOW_20)
+
+r5r::stop_r5(r5r_core)
+rJava::.jgc(R.gc = TRUE)
 
 # ----- Summary Statistics ------
 
-#Could alter max_trips?
+#Calculate ratios
+jobs_in_45_min <- jobs_in_45_min %>%
+  mutate(ratioCP = jobs_standard/jobs_accessibleCP,
+         ratioSLOW = jobs_standard/jobs_accessible_SLOW)%>%
+  mutate(across(starts_with("ratio"), ~ replace(., is.nan(.), 1))) #if both are null, there is no change!
+summary(jobs_in_45_min$ratioCP)
+summary(jobs_in_45_min$ratioSLOW)
+
+#Calculate absolute differences
+jobs_in_45_min <- jobs_in_45_min %>%
+  mutate(ABSdiff_CP = jobs_standard-jobs_accessibleCP,
+         ABSdiff_SLOW = jobs_standard-jobs_accessible_SLOW)
+summary(jobs_in_45_min$ABSdiff_CP)
+summary(jobs_in_45_min$ABSdiff_SLOW)
+
+#Calculate normalised differences
+jobs_in_45_min <- jobs_in_45_min %>%
+  mutate(diffCP = (jobs_accessibleCP-jobs_standard)/(jobs_accessibleCP+jobs_standard),
+         diffSLOW = (jobs_accessible_SLOW-jobs_standard)/(jobs_accessible_SLOW+jobs_standard))%>%
+  mutate(across(starts_with("diff"), ~ replace(., is.nan(.), 0))) #if both are null, there is no change!
+summary(jobs_in_45_min$diffCP)
+summary(jobs_in_45_min$diffSLOW)
+
+#Overview
+summary(jobs_in_45_min$jobs_standard)
+summary(jobs_in_45_min$jobs_standardWALK)
+summary(jobs_in_45_min$jobs_accessibleCP)
+summary(jobs_in_45_min$jobs_accessibleCP_WALK)
+summary(jobs_in_45_min$jobs_accessible_SLOW)
+summary(jobs_in_45_min$jobs_accessibleSLOW_WALK)
+
+#Transfer-restricted
+summary(jobs_in_45_min$jobs_standard_TR)
+summary(jobs_in_45_min$jobs_accessibleCP_TR)
+summary(jobs_in_45_min$jobs_accessibleSLOW_TR)
+
+#Walk-time restricted
+summary(jobs_in_45_min$jobs_accessibleCP_WR)
+summary(jobs_in_45_min$jobs_accessibleSLOW_WR)
+
+#All restrictions
+summary(jobs_in_45_min$jobs_accessibleSLOW_WRTR)
+#WR as a greater constraint than TR
+
+#Find average figures, weighted by number of non-disabled and disabled people
+calculations <- pop_centroids %>%
+  dplyr::select(id, total_disabled, total_pop)%>%
+  mutate(total_non_disabled = total_pop-total_disabled)%>%
+  left_join(jobs_in_45_min, by=c("id" = "lsoa21cd"))
+calculations <- calculations %>%
+  mutate(jobs_non_disabled_multiplied = jobs_standard * total_non_disabled,
+         jobs_CP_multiplied = jobs_accessibleCP * total_disabled,
+         jobs_SLOW_multiplied = jobs_accessible_SLOW * total_disabled)
+total_disabled <- sum(calculations$total_disabled)
+total_non_disabled <- sum(calculations$total_non_disabled)
+avg_jobs_non_disabled <- sum(calculations$jobs_non_disabled_multiplied)/total_non_disabled
+avg_jobs_disabled_CP <- sum(calculations$jobs_CP_multiplied)/total_disabled
+avg_jobs_disabled_SLOW <- sum(calculations$jobs_SLOW_multiplied)/total_disabled
+print(avg_jobs_non_disabled) #70672.32
+print(avg_jobs_disabled_CP) #58189.51
+print(avg_jobs_disabled_SLOW) #1766.916
+
+#Average differences: CP and slow
+print(avg_jobs_non_disabled - avg_jobs_disabled_CP) #CP: 12482.81
+print(avg_jobs_non_disabled - avg_jobs_disabled_SLOW) #Slow: 68905.4
+
+#As percentages
+round(100 * avg_jobs_disabled_CP/avg_jobs_non_disabled, 2) #CP: 82.3%
+round(100 * avg_jobs_disabled_SLOW/avg_jobs_non_disabled, 2) #Slow: 2.5%
+
+#Extra benefit from PT
+jobs_in_45_min <- jobs_in_45_min %>%
+  mutate(standard_PTbenefit = jobs_standard-jobs_standardWALK,
+         CP_PTbenefit = jobs_accessibleCP-jobs_accessibleCP_WALK,
+         SLOW_PTbenefit = jobs_accessible_SLOW - jobs_accessibleSLOW_WALK)
+summary(jobs_in_45_min$standard_PTbenefit)
+summary(jobs_in_45_min$CP_PTbenefit)
+summary(jobs_in_45_min$SLOW_PTbenefit)
+
+#Proportions of jobs accessed through PT
+median(jobs_in_45_min$standard_PTbenefit)/median(jobs_in_45_min$jobs_standard)
+median(jobs_in_45_min$CP_PTbenefit)/median(jobs_in_45_min$jobs_accessibleCP)
+median(jobs_in_45_min$SLOW_PTbenefit)/median(jobs_in_45_min$jobs_accessibleSLOW)
+
+#Quick 20 min comparison
+summary(jobs_in_20_min$jobs_standard)
+summary(jobs_in_20_min$jobs_accessibleCP)
+summary(jobs_in_20_min$jobs_accessible_SLOW)
+
+#Find average figures, weighted by number of non-disabled and disabled people
+calculations <- pop_centroids %>%
+  dplyr::select(id, total_disabled, total_pop)%>%
+  mutate(total_non_disabled = total_pop-total_disabled)%>%
+  left_join(jobs_in_20_min, by=c("id" = "lsoa21cd"))
+calculations <- calculations %>%
+  mutate(jobs_non_disabled_multiplied = jobs_standard * total_non_disabled,
+         jobs_CP_multiplied = jobs_accessibleCP * total_disabled,
+         jobs_SLOW_multiplied = jobs_accessible_SLOW * total_disabled)
+avg_jobs_non_disabled <- sum(calculations$jobs_non_disabled_multiplied)/total_non_disabled
+avg_jobs_disabled_CP <- sum(calculations$jobs_CP_multiplied)/total_disabled
+avg_jobs_disabled_SLOW <- sum(calculations$jobs_SLOW_multiplied)/total_disabled
+print(avg_jobs_non_disabled) #2085.214
+print(avg_jobs_disabled_CP) #2023.299
+print(avg_jobs_disabled_SLOW) #460.6448
+
+#Average differences: CP and slow
+print(avg_jobs_non_disabled - avg_jobs_disabled_CP) #CP: 61.91485
+print(avg_jobs_non_disabled - avg_jobs_disabled_SLOW) #Slow: 1624.569
+
+#As percentages
+round(100 * avg_jobs_disabled_CP/avg_jobs_non_disabled, 2) #CP: 97.03%
+round(100 * avg_jobs_disabled_SLOW/avg_jobs_non_disabled, 2) #Slow: 22.09%
+
+#Walking seems to be responsible for bulk of job access!
+
+#Are patterns more pronounced in areas which are more served by public transport?
+#I tried filtering to London LSOAs but proportions were actually very similar (82.39% and 2.48%)
+#What about filtering out certain boroughs?
+
+boroughs_to_remove <- c("Bexley", "Bromley", "Greenwich", "Sutton", "Kingston upon Thames") #all contain just 0 or 1 stations
+boroughs_to_keep <- boroughs %>%
+  filter(!name %in% boroughs_to_remove)%>%
+  st_transform(st_crs(jobs_in_45_min))
+jobs_in_45_min_NEW_AREA <- jobs_in_45_min %>%
+  filter(lsoa21cd %in% london_codes$lsoa21cd)%>%
+  st_filter(., boroughs_to_keep, .predicate = st_intersects)
+
+summary(jobs_in_45_min_NEW_AREA$jobs_standard)
+summary(jobs_in_45_min_NEW_AREA$jobs_accessibleCP)
+summary(jobs_in_45_min_NEW_AREA$jobs_accessible_SLOW)
+
+#Weighted averages
+calculations <- pop_centroids %>%
+  dplyr::select(id, total_disabled, total_pop)%>%
+  mutate(total_non_disabled = total_pop-total_disabled)%>%
+  inner_join(jobs_in_45_min_NEW_AREA, by=c("id" = "lsoa21cd"))
+calculations <- calculations %>%
+  mutate(jobs_non_disabled_multiplied = jobs_standard * total_non_disabled,
+         jobs_CP_multiplied = jobs_accessibleCP * total_disabled,
+         jobs_SLOW_multiplied = jobs_accessible_SLOW * total_disabled)
+avg_jobs_non_disabled <- sum(calculations$jobs_non_disabled_multiplied)/total_non_disabled
+avg_jobs_disabled_CP <- sum(calculations$jobs_CP_multiplied)/total_disabled
+avg_jobs_disabled_SLOW <- sum(calculations$jobs_SLOW_multiplied)/total_disabled
+print(avg_jobs_non_disabled) #66509.12
+print(avg_jobs_disabled_CP) #53821.65
+print(avg_jobs_disabled_SLOW) #1569.763
+
+print(avg_jobs_non_disabled - avg_jobs_disabled_CP) #CP: 12687.46
+print(avg_jobs_non_disabled - avg_jobs_disabled_SLOW) #Slow: 64939.35
+
+round(100 * avg_jobs_disabled_CP/avg_jobs_non_disabled, 2) #CP: 80.92%
+round(100 * avg_jobs_disabled_SLOW/avg_jobs_non_disabled, 2) #Slow: 2.36%
+
+#So even still, it's not as pronounced as expected
+#I also tried for only LSOAs within 2km of tube stops and proportions were v similar (80.6%, 2.36%)
+
+rm(total_disabled, total_non_disabled, calculations, avg_jobs_non_disabled, avg_jobs_disabled_CP, avg_jobs_disabled_SLOW, jobs_in_45_min_NEW_AREA)
+
+# ----- Display Results -----
+
+#Violin plot of job distributions
+pivoted <- jobs_in_45_min %>%
+  st_drop_geometry() %>%
+  dplyr::select(jobs_standard, jobs_accessibleCP, jobs_accessible_SLOW) %>%
+  rename(
+    "Jobs Within 45 Minutes" = jobs_standard,
+    "Jobs Within 45 Minutes, \nStep-Free" = jobs_accessibleCP,
+    "Jobs Within 45 Minutes,\n Step-Free and \nSlower Walking Speed" = jobs_accessible_SLOW
+  ) %>%
+  pivot_longer(cols = everything(),
+               names_to = "type",
+               values_to = "value")
+pivoted$type <- factor(pivoted$type, levels = c(
+  "Jobs Within 45 Minutes",
+  "Jobs Within 45 Minutes, \nStep-Free",
+  "Jobs Within 45 Minutes,\n Step-Free and \nSlower Walking Speed"
+))
+
+ggplot(pivoted, aes(x = type, y = value, fill = type)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, outlier.shape = NA) +
+  labs(title = "Distribution of Accessible Jobs Within 45 Minutes",
+       x = "Travel Type",
+       y = "Jobs",
+       caption = "Please note that the y axis actually extends further for the first two categories.") +
+  ylim(0, 100000) +
+  theme_minimal() +
+  theme(legend.position = "none")+
+  scale_fill_brewer(palette = "Dark2") +
+  theme(
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
+    axis.title = element_text(family = "Segoe UI Semibold", size=10),
+    axis.text = element_text(family = "Segoe UI", size=9),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    plot.caption = element_text(family = "Segoe UI Light", size = 8, hjust=0))
+rm(pivoted)
+#Again, walking as responsible for most of the job accessibility
+#Distributions are fairly constant
+
+#Map absolute differences
+breaks <- c(0, 5000, 10000, 20000, 60000, 100000, 200000, 300000, 800000)
+tmap_save(
+  tm_shape(jobs_in_45_min) +
+    tm_polygons(
+      col = "ABSdiff_CP",
+      style="fixed",
+      breaks=breaks,
+      palette="rd_pu",
+      alpha=0.9,
+      title = "Difference",
+      textNA = "",
+      border.alpha=0) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    tm_title("Absolute Difference in Accessible Jobs within 45 Minutes") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)) +
+    tm_layout(
+      bg.color = "grey80",
+      legend.outside = TRUE,
+      legend.outside.position = "right",
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/job_absolute_diffCP.png",
+  dpi=300)
+
+breaks <- c(0, 10000, 30000, 60000, 100000, 200000, 400000, 600000, 1000000)
+tmap_save(
+  tm_shape(jobs_in_45_min) +
+    tm_polygons(
+      col = "ABSdiff_SLOW",
+      style="fixed",
+      breaks=breaks,
+      palette="rd_pu",
+      alpha=0.9,
+      title = "Difference",
+      textNA = "",
+      border.alpha=0) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    tm_title("Absolute Difference in Accessible Jobs within 45 Minutes, \nSlower Walking Speed") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)) +
+    tm_layout(
+      bg.color = "grey80",
+      legend.outside = TRUE,
+      legend.outside.position = "right",
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/job_absolute_diffSLOW.png",
+  dpi=300)
+
+#Map ratios/differences
+
+#To do:
+  #Calculate and map ratios/differences
+  #Bivariate choropleth and cluster again?

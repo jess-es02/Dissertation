@@ -313,7 +313,8 @@ ggplot(pivoted, aes(x = type, y = value, fill = type)) +
   geom_boxplot(width = 0.1, outlier.shape = NA) +
   labs(title = "Distribution of Travel Times to Stations",
        x = "Travel Type",
-       y = "Time (minutes)") +
+       y = "Time (minutes)",
+       caption = "Please note that the y axis actually extends further for the first two categories.") +
   ylim(0, 200) +
   theme_minimal() +
   theme(legend.position = "none")+
@@ -322,7 +323,8 @@ ggplot(pivoted, aes(x = type, y = value, fill = type)) +
     plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
     axis.title = element_text(family = "Segoe UI Semibold", size=10),
     axis.text = element_text(family = "Segoe UI", size=9),
-    axis.title.x = element_text(margin = margin(t = 10)))
+    axis.title.x = element_text(margin = margin(t = 10)),
+    plot.caption = element_text(family = "Segoe UI Light", size = 8, hjust=0))
 #Need to note that this is not the full range - upper bound actually extends beyond 200 min
 #Horizontal equity: still a difference
 #Vertical equity: needs considerable change
@@ -1223,6 +1225,7 @@ tm_shape(cluster_vars)+
 #To do:
 # - Identify ideal stations
   # - Could do a multi-criteria analysis
+  # - Could I consider jobs in catchment as an indicator of busyness/attractiveness?
 # - Run OTP directly in Java?!
   #  java -Xmx2G -jar otp-2.2.0-shaded.jar --load graphs/accessible --serve
   # - Or a for-loop, but unlikely to run on time
@@ -1237,7 +1240,6 @@ tm_shape(cluster_vars)+
 #Clustering
   # - Could I do an easier variable?
   # - Find areas with a high proportion of in-need population which might be missed by TfL's approach
-# - Redo upgrade status map with borough boundaries instead of LSOAs
 
 #Need to consider the issue that some travel times are really unrealistic
 #Links to very long walks due to remote centroids, a lack of non-TfL PT, and certain roads which are non-pedestrian-accessible
