@@ -267,6 +267,8 @@ jobs_in_45_min <- study_lsoas %>%
   mutate(across(starts_with("jobs_"), ~ coalesce(., 0)))
 
 st_write(jobs_in_45_min, "data_export_vis/jobs_in_45_min2.gpkg")
+#jobs_in_45_min <- st_read("data_export_vis/jobs_in_45_min2.gpkg")
+
 rm(jobs_standard, jobs_accessibleCP, jobs_accessibleSLOW,
    jobs_standardWALK, jobs_accessibleCP_WALK, jobs_accessibleSLOW_WALK,
    jobs_standard_TR, jobs_accessibleCP_TR, jobs_accessibleSLOW_TR,
@@ -295,9 +297,28 @@ rJava::.jgc(R.gc = TRUE)
 # ----- Summary Statistics ------
 
 #Calculate ratios
+
+# jobs_in_45_min <- jobs_in_45_min %>%
+#   mutate(ratioCP = jobs_standard/jobs_accessibleCP,
+#          ratioSLOW = jobs_standard/jobs_accessible_SLOW)%>%
+#   mutate(across(starts_with("ratio"), ~ replace(., is.nan(.), 1))) #if both are null, there is no change!
+# 
+# #Lots of infinities in the slow ratio, due to 0 values - let's manually cap at the highest ratio with a non-zero job value
+# ratio_cap <- jobs_in_45_min %>%
+#   filter(jobs_accessible_SLOW>0)%>%
+#   summarise(max_ratio=max(ratioSLOW))%>%
+#   pull(max_ratio)
+# jobs_in_45_min <- jobs_in_45_min %>%
+#   mutate(ratioSLOW = ifelse(is.infinite(ratioSLOW), ratio_cap, ratioSLOW))
+# hist(jobs_in_45_min$ratioSLOW) #not ideal, but at least we are incorporating these values
+# 
+# summary(jobs_in_45_min$ratioCP)
+# summary(jobs_in_45_min$ratioSLOW)
+# rm(ratio_cap)
+
 jobs_in_45_min <- jobs_in_45_min %>%
-  mutate(ratioCP = jobs_standard/jobs_accessibleCP,
-         ratioSLOW = jobs_standard/jobs_accessible_SLOW)%>%
+  mutate(ratioCP = jobs_accessibleCP/jobs_standard,
+         ratioSLOW = jobs_accessible_SLOW/jobs_standard)%>%
   mutate(across(starts_with("ratio"), ~ replace(., is.nan(.), 1))) #if both are null, there is no change!
 summary(jobs_in_45_min$ratioCP)
 summary(jobs_in_45_min$ratioSLOW)
@@ -489,9 +510,36 @@ ggplot(pivoted, aes(x = type, y = value, fill = type)) +
     axis.text = element_text(family = "Segoe UI", size=9),
     axis.title.x = element_text(margin = margin(t = 10)),
     plot.caption = element_text(family = "Segoe UI Light", size = 8, hjust=0))
-rm(pivoted)
 #Again, walking as responsible for most of the job accessibility
 #Distributions are fairly constant
+
+#Plot distributions of ratios
+pivoted <- jobs_in_45_min %>%
+  st_drop_geometry() %>%
+  dplyr::select(ratioCP, ratioSLOW) %>%
+  rename(
+    "Speed Unchanged" = ratioCP,
+    "Slower Walking Speed" = ratioSLOW
+  ) %>%
+  pivot_longer(cols = everything(),
+               names_to = "type",
+               values_to = "value")
+ggplot(pivoted, aes(x = type, y = value, fill = type)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, outlier.shape = NA) +
+  labs(title = "Distribution of Job Accessiblity Ratios",
+       x = NULL,
+       y = "Ratio of Accessible Jobs versus no Mobility Restrictions") +
+  theme_minimal() +
+  theme(legend.position = "none")+
+  scale_fill_brewer(palette = "Dark2") +
+  theme(
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
+    axis.title = element_text(family = "Segoe UI Semibold", size=10),
+    axis.text = element_text(family = "Segoe UI", size=9),
+    axis.title.x = element_text(margin = margin(t = 10)))+
+  coord_flip()
+rm(pivoted)
 
 #Map absolute differences
 breaks <- c(0, 5000, 10000, 20000, 60000, 100000, 200000, 300000, 800000)
@@ -568,8 +616,156 @@ tmap_save(
   filename = "maps/job_absolute_diffSLOW.png",
   dpi=300)
 
-#Map ratios/differences
+#Map ratios
+#CP
+breaks <- c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)
+tmap_save(
+  tm_shape(jobs_in_45_min) +
+    tm_polygons(
+      col = "ratioCP",
+      style="fixed",
+      breaks=breaks,
+      palette="-rd_pu",
+      alpha=0.9,
+      title = "Ratio",
+      textNA = "",
+      border.alpha=0
+    ) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    tm_title("Ratio of Accessible Jobs: Step-Free Stations Versus No Constraints") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)
+    ) +
+    tm_layout(
+      bg.color = "grey80",
+      legend.outside = TRUE,
+      legend.outside.position = "right",
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/job_ratioCP.png",
+  dpi=300)
+#Slow
+breaks <- c(0, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1)
+tmap_save(
+  tm_shape(jobs_in_45_min) +
+    tm_polygons(
+      col = "ratioSLOW",
+      style="fixed",
+      breaks=breaks,
+      palette="-rd_pu",
+      alpha=0.9,
+      title = "Ratio",
+      textNA = "",
+      border.alpha=0
+    ) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    tm_title("Ratio of Accessible Jobs: Step-Free Stations Versus No Constraints, \nSlower Walking Speed") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)
+    ) +
+    tm_layout(
+      bg.color = "grey80",
+      legend.outside = TRUE,
+      legend.outside.position = "right",
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/job_ratioSLOW.png",
+  dpi=300)
+#Larger LSOAs as a problem - sizes are just so unrepresentative
 
-#To do:
-  #Calculate and map ratios/differences
-  #Bivariate choropleth and cluster again?
+#Join to in-need index
+jobs_in_45_min <- jobs_in_45_min %>%
+  left_join(., (pop_centroids %>% dplyr::select(id, step_free_benefit_indexW)), by = c("lsoa21cd" = "id"))
+cor.test(jobs_in_45_min$ratioCP, jobs_in_45_min$step_free_benefit_indexW)
+cor.test(jobs_in_45_min$ratioSLOW, jobs_in_45_min$step_free_benefit_indexW)
+#Weak positive linear association, i.e. greater disparity and less in-need population (statistically significant)
+
+#Bivariate choropleths: accessibility ratio versus proportion
+
+#Need to add some slight noise to the data so we can add quantiles
+bivariate_data <- jobs_in_45_min %>%
+  dplyr::select(lsoa21cd, ratioCP, ratioSLOW, step_free_benefit_indexW)%>%
+  mutate(ratioCP_jitter = jitter(ratioCP, amount = 1e-6),
+         invCP=1/ratioCP_jitter,
+         invSLOW=1/ratioSLOW,
+         invSLOW = ifelse(is.infinite(invSLOW), 1100, invSLOW)) #invert, so higher values = greater disparity 
+
+bi_data <- bi_class(bivariate_data, x = invCP, y = step_free_benefit_indexW, style = "quantile", dim = 4)
+pal <- bi_pal("GrPink2", dim = 4, preview = FALSE)
+bi_classes <- names(pal)
+tmap_save(
+  tm_shape(bi_data) +
+    tm_polygons("bi_class",
+                palette = pal,
+                border.alpha = 0,
+                legend.show = FALSE) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)) +
+    tm_title("Step-Free Accessibility Disparity versus Presence of In-Need Population")+
+    tm_layout(
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      bg.color = "grey70"),
+  filename = "maps/bivariate_choropleth_job_pop.png",
+  dpi = 300)
+
+bi_data <- bi_class(bivariate_data, x = invSLOW, y = step_free_benefit_indexW, style = "quantile", dim = 4)
+pal <- bi_pal("GrPink2", dim = 4, preview = FALSE)
+bi_classes <- names(pal)
+tmap_save(
+  tm_shape(bi_data) +
+    tm_polygons("bi_class",
+                palette = pal,
+                border.alpha = 0,
+                legend.show = FALSE) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)) +
+    tm_title("Step-Free Accessibility Disparity versus Presence of In-Need Population, \nSlower Walking Speed")+
+    tm_layout(
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      bg.color = "grey70"),
+  filename = "maps/bivariate_choropleth_job_popSLOW.png",
+  dpi = 300)
+#We can use the same legends as for the travel time analysis
+#Again, slower walking speeds in this context as not particularly helpful - bias towards larger LSOAs
+
+rm(bi_classes, boroughs_to_remove, pal, bi_data, bivariate_data, boroughs_to_keep)
