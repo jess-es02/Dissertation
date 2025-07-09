@@ -1,20 +1,11 @@
-#General maps and summary statistics on station accessibility
+#4) General maps and summary statistics on station accessibility
 
 #In this file, we:
   # - Categorise stations into accessibility types according to pathways.txt
   # - Map stations and the study area
   # - Find some general summary statistics on station accessibility type
 
-# Note that other maps are located in other files:
-# 1) job_comparison
-  # - Job distribution
-# 2) analysis_r5r
-  # - Binary of nearest station
-  # - Accessibility ratio (CP and slower walking speed)
-  # - Local spatial autocorrelation
-  # - Bivariate LISA
-# 3) gtfs_network
-  # - Shortlisted stations
+#Note that maps are located in other files as well - these are just some overviews
 
 library(tidyverse)
 library(sf)

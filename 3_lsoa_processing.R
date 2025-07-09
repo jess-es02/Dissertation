@@ -1,4 +1,4 @@
-#Processing socio-demographic data at LSOA-level
+#3) Processing socio-demographic data at LSOA-level
 
 #In this file, we:
   # - Delineate the study area: all LSOAs in Greater London, and any within 2km of a tube/Overground stop outside of this area

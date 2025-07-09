@@ -1,4 +1,4 @@
-#Network analyis on non-step-free stations
+#8) Network analysis on non-step-free stations
 
 #In this file we:
   # - Simplify the TfL network to tube/rail only, and represent it as a graph
@@ -12,10 +12,7 @@
   # - Depicting accessibility as a binary
   # - And issue with step-free representation, where it allows you to switch between multiple branches on the same line (when the interchange is not necessarily step-free)
 
-#Beforehand, ensure to run:
-  # 1) lsoa_processing.R
-  # 2) maps_summary_stats.R
-  # Alongside loading packages from analysis_r5r.R
+#Beforehand, ensure to run files 3-4, and load packages from 5
 
 library(future)
 library(furrr)

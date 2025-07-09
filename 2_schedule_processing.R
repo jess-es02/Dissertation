@@ -1,9 +1,9 @@
-#Building the multimodal GTFS object
+#2) Building the multimodal GTFS object
 
 #In this file, we:
   # - Convert the Traveline dataset for the entirety of London from TransXChange to GTFS
   # - Use TfL topology data to match each NAPTAN ID to its platform ID (for joining with accessibility data)
-  # - Merge the resulting object with the Elizabeth Line and Overground GTFS files
+  # - Merge the resulting object with the Elizabeth Line and Overground GTFS files from rail_download.R
   # - Turn this overall GTFS object into an r5r_core for (non-step-free) routing
   # - Process TfL topology data to create a pathways.txt file reflecting wheelchair accessibility
   # - Integrate into the GTFS object, creating a file which will reflect step-free accessibility in OTP

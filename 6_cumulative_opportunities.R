@@ -1,14 +1,11 @@
-#Job access through the transport network
+#6) Job access through the transport network
 
 #In this file we:
   # - Conduct EDA on the census job data
   # - Modify the r5r file to exclude non-step-free stations
   # - Compare accessibility to jobs for disabled versus non-disabled individuals
 
-#Beforehand, ensure to run:
-# 1) lsoa_processing.R
-# 2) maps_summary_stats.R
-# 3) analysis_r5r.R
+#Beforehand, ensure to run files 3-5
 
 library(tmap)
 library(tmaptools)

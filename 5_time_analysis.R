@@ -1,4 +1,4 @@
-#Travel time to the transport network
+#5) Travel time to the tube/rail network
 
 #In this file we:
   # - Use r5r to calculate travel time from each LSOA to the nearest accessible station
@@ -10,8 +10,8 @@
   # - Assess not-fully-accessible stations according to their catchment properties, and compare to TfL's shortlisted stations
 
 #Beforehand, ensure to run:
-  # 1) lsoa_processing.R
-  # 2) maps_summary_stats.R
+  # 3_lsoa_processing.R
+  # 4_maps_summary_stats.R
 
 library(tidyverse)
 library(sf)
