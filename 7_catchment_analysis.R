@@ -394,31 +394,160 @@ ggplot(cluster_vars, aes(x=time_ratioCP, y=inv_job_ratioCP, color = factor(clust
   #7: low in-need population, higher accessibility ratios
 
 rm(cluster_vars_numeric_scaled, cluster_vars_df, cluster_vars_scaled, hc, hc_obj, sil_data, clusters, cols_changed, dist_mat, k, max_k, sil, tree_cut, inverse_normal_transform, avg_sil, dend_plot)
-st_write(cluster_vars, "data_export_vis/clusters.gpkg")
+#st_write(cluster_vars, "data_export_vis/clusters.gpkg")
+#cluster_vars <- st_read("data_export_vis/clusters.gpkg")
 
 # ----- Station Catchment Analysis -----
 
-# #Join data
-# station_catchments <- fastest_time_to_stations %>%
-#   dplyr::select(lsoa21cd, lsoa21nm, fastest_station, ratioCP, ratioSLOW) %>%
-#   left_join(cluster_vars %>% st_drop_geometry() %>% dplyr::select(lsoa21cd, cluster), by = "lsoa21cd")%>%
-#   left_join(pop_centroids %>% dplyr::select(id, total_pop, total_under_5, total_65_plus, total_disabled), by = c("lsoa21cd" = "id"))%>%
-#   mutate(total_in_need_pop = total_under_5 + total_65_plus + total_disabled)%>%
-#   dplyr::select(-total_under_5, -total_65_plus, -total_disabled)%>%
-#   left_join(tube_stations_main %>% dplyr::select(stop_id, stop_name, classification, upgrade_status)%>%st_drop_geometry(), by=c("fastest_station"="stop_id"))
-# 
-# station_catchments_summary <- station_catchments %>%
-#   group_by(fastest_station, stop_name, classification, upgrade_status) %>%
-#   summarise(
-#     total_population = sum(total_pop),
-#     total_in_need_population = sum(total_in_need_pop),
-#     total_in_need_cluster_5 = sum(total_in_need_pop[cluster == 5]),
-#     total_in_need_cluster_4_or_5 = sum(total_in_need_pop[cluster %in% c(4, 5)]),
-#     mean_ratioCP = mean(ratioCP),
-#     mean_ratioSLOW = mean(ratioSLOW))%>%
-#   mutate(pct_in_need = 100*total_in_need_population/total_population)%>%
-#   filter(classification != "Fully Accessible")
+#Join data
+station_catchments <- fastest_time_to_stations %>%
+  dplyr::select(lsoa21cd, lsoa21nm, fastest_station, ratioCP, ratioSLOW) %>%
+  rename("time_ratioCP" = ratioCP, "time_ratioSLOW" = ratioSLOW)%>%
+  left_join(cluster_vars %>% st_drop_geometry() %>% dplyr::select(lsoa21cd, inv_job_ratioCP, inv_job_ratioSLOW, cluster), by = "lsoa21cd")%>%
+  left_join(pop_centroids %>% dplyr::select(id, total_pop, total_under_5, total_65_plus, total_disabled), by = c("lsoa21cd" = "id"))%>%
+  mutate(total_in_need_pop = total_under_5 + total_65_plus + total_disabled)%>%
+  dplyr::select(-total_under_5, -total_65_plus, -total_disabled)%>%
+  left_join(tube_stations_main %>% dplyr::select(stop_id, stop_name, classification, upgrade_status)%>%st_drop_geometry(), by=c("fastest_station"="stop_id"))
+
+station_catchments_summary <- station_catchments %>%
+  group_by(fastest_station, stop_name, classification, upgrade_status) %>%
+  summarise(
+    total_population = sum(total_pop),
+    total_in_need_population = sum(total_in_need_pop),
+    total_in_need_cluster_1 = sum(total_in_need_pop[cluster == 1]),
+    total_in_need_cluster_1_or_3 = sum(total_in_need_pop[cluster %in% c(1, 3)]),
+    mean_time_ratioCP = mean(time_ratioCP),
+    mean_time_ratioSLOW = mean(time_ratioSLOW),
+    mean_job_ratioCP = mean(inv_job_ratioCP),
+    mean_job_ratioSLOW = mean(inv_job_ratioSLOW))%>%
+  mutate(pct_in_need = 100*total_in_need_population/total_population)
+st_write(station_catchments_summary, "data_export_vis/station_catchment_summary.gpkg")
+
+#Compare properties of accessible and non-accessible catchments
+station_catchments_summary_accessible <- station_catchments_summary %>%
+  filter(classification=='Fully Accessible')
+station_catchments_summary <- station_catchments_summary %>%
+  filter(classification != 'Fully Accessible')
+
+summary(station_catchments_summary$total_in_need_cluster_1_or_3)
+summary(station_catchments_summary_accessible$total_in_need_cluster_1_or_3)
+
+summary(station_catchments_summary$mean_time_ratioCP)
+summary(station_catchments_summary_accessible$mean_time_ratioCP)
+summary(station_catchments_summary$mean_job_ratioCP)
+summary(station_catchments_summary_accessible$mean_job_ratioCP) #so job access is reduced, even when your nearest station is step-free - but median ratio is 1.027, i.e. average access to 97% of jobs
+
+summary(station_catchments_summary$mean_time_ratioSLOW)
+summary(station_catchments_summary_accessible$mean_time_ratioSLOW)
+summary(station_catchments_summary$mean_job_ratioSLOW)
+summary(station_catchments_summary_accessible$mean_job_ratioSLOW)
+
+#Compare stations TfL are exploring to the rest
+station_catchments_summary <- station_catchments_summary %>%
+  mutate(upgrade_status2 = if_else(upgrade_status == "No Plans", "No Plans", "Potential Upgrade"))
+
+#Pivot data for faceted violin plot
+labels <- c(
+  total_population = "Total Population",
+  total_in_need_population = "In-Need Population",
+  pct_in_need = "Proportion of In-Need Population",
+  total_in_need_cluster_1 = "In-Need Population, Cluster 1",
+  total_in_need_cluster_1_or_3 = "In-Need Population, Clusters 1 & 3",
+  mean_time_ratioCP = "Mean Station Time Accessibility Ratio",
+  mean_time_ratioSLOW = "Mean Station Time Accessibility Ratio, \nSlower Walking Speed",
+  mean_job_ratioCP = "Mean Job Accessibility Ratio",
+  mean_job_ratioSLOW = "Mean Job Accessibility Ratio, \nSlower Walking Speed")
+numeric_vars <- station_catchments_summary %>%
+  st_drop_geometry() %>%
+  dplyr::select(fastest_station, upgrade_status2, where(is.numeric)) %>%
+  pivot_longer(
+    cols = where(is.numeric),
+    names_to = "variable",
+    values_to = "value")%>%
+  mutate(
+    variable = factor(variable, levels = names(labels), labels = labels))
+
+#Create violin plot faceted by variable, split by upgrade_status2
+ggplot(numeric_vars, aes(x = upgrade_status2, y = value, fill = upgrade_status2)) +
+  geom_violin(trim = FALSE) +
+  stat_summary(aes(color = upgrade_status2),
+               fun = median,
+               geom = "crossbar",
+               linetype = "dashed",
+               size = 0.2,
+               show.legend = FALSE) +
+  facet_wrap(~ variable, scales = "free_y", ncol=3) +
+  scale_fill_brewer(palette = "Set1")+
+  guides(color = "none") +
+  theme_minimal() +
+  labs(
+    title = "Catchment Properties of Non-Fully-Accessible Stations",
+    x = NULL,
+    y = "Value",
+    fill = "Upgrade Status",
+    caption = "Dashed lines represent distribution medians.") +
+  theme(
+    axis.text.x = element_blank(),  
+    axis.ticks.x = element_blank(), 
+    #legend.position = c(0.7, 0.1),
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
+    axis.title = element_text(family = "Segoe UI Semibold", size=10),
+    axis.text = element_text(family = "Segoe UI", size=9),
+    legend.title = element_text(family = "Segoe UI Semibold", size = 10),
+    legend.text = element_text(family = "Segoe UI", size = 9),
+    strip.text = element_text(family = "Segoe UI", size = 9),
+    plot.caption = element_text(family = "Segoe UI Light", size = 8, hjust=0))
+#For formatting on A4, it's probably best to paste the legend in directly below
+
+#So we can see that TfL prioritises catchments with larger populations
+#But accessibility ratios are on average lower than no-plans
+#Does have higher raw populations in clusters 1+3 (probably due to having larger pops in general)
+rm(numeric_vars, station_catchments, labels)
+
+#Quick cluster map with stations
+tmap_mode("view")
+tm_shape(cluster_vars)+
+  tm_polygons("cluster", alpha=0.8, border.alpha=0)+
+  tm_shape(boroughs)+
+  tm_polygons(lwd=0.5, fill=NA, alpha=0)+
+  tm_shape(tube_stations_main %>% filter(classification != "Fully Accessible"))+
+  tm_dots(col="upgrade_status", palette="Dark2")
+
+# ---- Prioritise stations -----
+
+#Z-score standardise all catchment variables
+station_catchments_summary_scaled <- station_catchments_summary %>%
+  dplyr::select(where(is.numeric))%>%
+  st_drop_geometry()%>%
+  scale()
+station_catchments_summary_scaled <- station_catchments_summary %>% #Reattach to ID
+  dplyr::select(fastest_station, stop_name, classification, upgrade_status)%>%
+  st_drop_geometry()%>%
+  bind_cols(as.data.frame(station_catchments_summary_scaled))
+
+#We need to shortlist the top 8 based on these catchment criteria
+
+#Variables being considered - remember we are focuing on equity:
+  #In-need population in clusters 1 and 3: 40%
+  #Accessibility disparities: 20% each
+  #In-need population: 20%
+
+station_catchments_summary_scaled <- station_catchments_summary_scaled %>%
+  mutate(total_score = total_in_need_cluster_1_or_3*.4+mean_time_ratioCP*.2+mean_job_ratioCP*.2+total_in_need_population*.2)
+
+#Double-check how to do scoring
+#Make map (maybe with network chosen and TfL scenarios as well)
+
+#To do:
+# - New scenarios?
+  # - Compare shortlisted
+  # - Top tube stations by usage
+  # - Compare centrality measure (simplified network - e.g. no buses, accessibility binary)
+  # - Top catchment - clusters
+# - How to assess?
 
 #Note limitations of not clustering on ratioSLOW - less representative of real-world constraints (but less biased towards larger LSOAs)
 #We might need a different clustering approach to account for LSOAs near accessible stations which are negatively affected by destination characteristics
-#Or could it be okay to exclude this, due to sufficientarism?
+#Or could it be okay to exclude this, due to sufficientarism? Also, we see above that people whose nearest station is accessible have 97% job access, CP (although it can be as low as 50%)
+
+rm()
