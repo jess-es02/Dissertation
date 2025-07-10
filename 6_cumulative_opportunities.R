@@ -297,25 +297,6 @@ rJava::.jgc(R.gc = TRUE)
 # ----- Summary Statistics ------
 
 #Calculate ratios
-
-# jobs_in_45_min <- jobs_in_45_min %>%
-#   mutate(ratioCP = jobs_standard/jobs_accessibleCP,
-#          ratioSLOW = jobs_standard/jobs_accessible_SLOW)%>%
-#   mutate(across(starts_with("ratio"), ~ replace(., is.nan(.), 1))) #if both are null, there is no change!
-# 
-# #Lots of infinities in the slow ratio, due to 0 values - let's manually cap at the highest ratio with a non-zero job value
-# ratio_cap <- jobs_in_45_min %>%
-#   filter(jobs_accessible_SLOW>0)%>%
-#   summarise(max_ratio=max(ratioSLOW))%>%
-#   pull(max_ratio)
-# jobs_in_45_min <- jobs_in_45_min %>%
-#   mutate(ratioSLOW = ifelse(is.infinite(ratioSLOW), ratio_cap, ratioSLOW))
-# hist(jobs_in_45_min$ratioSLOW) #not ideal, but at least we are incorporating these values
-# 
-# summary(jobs_in_45_min$ratioCP)
-# summary(jobs_in_45_min$ratioSLOW)
-# rm(ratio_cap)
-
 jobs_in_45_min <- jobs_in_45_min %>%
   mutate(ratioCP = jobs_accessibleCP/jobs_standard,
          ratioSLOW = jobs_accessible_SLOW/jobs_standard)%>%

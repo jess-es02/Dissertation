@@ -945,178 +945,6 @@ ggsave(filename = "maps/bivariate_legend_disparity_pop.png",
 #We are looking for higher colours!
 #Difficult to compare with SLOW values because we cannot do much about changed accessibility from slower walking speeds
 
-# ---- Clustering ------
-#https://www.datacamp.com/tutorial/hierarchical-clustering-R
-
-#We will do hierarchal clustering as k-means/medoids assumes circular clusters
-#Clustering on ratioSLOW as this is more representative of real-world conditions
-
-cluster_vars <- fastest_time_to_stations %>%
-  dplyr::select(lsoa21cd, ratioSLOW, step_free_benefit_indexW)
-
-#Plot association between variables
-ggplot(cluster_vars, aes(ratioSLOW, step_free_benefit_indexW)) +
-  geom_point(alpha = 0.25)
-
-#Explore distributions before scaling
-hist(cluster_vars$ratioSLOW, 
-     main = "Distribution of ratioSLOW", 
-     col = "lightblue", 
-     border = "black",
-     breaks=100) #Positive skew - needs to be scaled
-hist(cluster_vars$step_free_benefit_indexW, 
-     main = "Distribution of pop index", 
-     col = "red", 
-     border = "black",
-     breaks=100) #Relatively normal dist
-
-symbox(~as.numeric(ratioSLOW), cluster_vars, na.rm=T, powers=seq(-3, 3, by=.5))
-#None are great
-
-#Try box-cox transformation (chatGPT helped here)
-x <- as.numeric(cluster_vars$ratioSLOW)
-model <- lm(x ~ 1)
-boxcox_result <- boxcox(model, lambda = seq(-5, 5, 0.01))
-best_lambda <- boxcox_result$x[which.max(boxcox_result$y)]
-x_trans <- (x^best_lambda - 1) / best_lambda
-hist(x_trans, 
-     main = "Box-Cox Transformed ratioSLOW", 
-     col = "lightblue", 
-     border = "black",
-     breaks=100)
-cluster_vars$ratioSLOW_boxcox <- x_trans
-
-#Now both are relatively normally distributed, let's standardise them so the scales are the same
-cluster_vars_numeric_scaled <- cluster_vars %>%
-  dplyr::select(where(is.numeric))%>%
-  st_drop_geometry()%>%
-  scale()
-cluster_vars_scaled <- cluster_vars %>% #Reattach to ID
-  dplyr::select(lsoa21cd)%>%
-  st_drop_geometry()%>%
-  bind_cols(as.data.frame(cluster_vars_numeric_scaled))%>%
-  dplyr::select(-ratioSLOW)
-rm(cluster_vars_numeric_scaled)
-
-ggplot(cluster_vars_scaled, aes(ratioSLOW_boxcox, step_free_benefit_indexW)) +
-  geom_point(alpha = 0.25)
-
-#Calculate distances and cluster
-set.seed(10)
-dist_mat <- dist(cluster_vars_scaled %>% dplyr::select(where(is.numeric)), method = "euclidean")
-hc <- hclust(dist_mat, method = 'complete') #only way to get defined clusters
-
-#Silhouette scores
-max_k <- 15
-avg_sil <- numeric(max_k)
-
-for (k in 2:max_k) {
-  clusters <- cutree(hc, k)
-  sil <- silhouette(clusters, dist_mat)
-  avg_sil[k] <- mean(sil[, 3])}
-
-#Plot
-sil_data <- data.frame(
-  k = 2:max_k,
-  avg_sil = avg_sil[2:max_k])
-ggplot(sil_data, aes(x = k, y = avg_sil)) +
-  geom_point(color = "deeppink3", size = 2) +        
-  geom_line(color = "deeppink3", size=0.5, linetype="dashed") + 
-  scale_x_continuous(breaks = 2:max_k)+
-  labs(
-    title = "Cluster Silhouette Analysis",
-    x = "Number of clusters",
-    y = "Average silhouette width") +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust = 0.5),
-    axis.title = element_text(family = "Segoe UI Semibold", size = 12),
-    axis.text = element_text(family = "Segoe UI", size = 10))
-
-tree_cut <- cutree(hc, k = 6)
-
-#Plot dendrogram
-hc_obj <- as.dendrogram(hc)
-dend_plot <- color_branches(hc_obj, k=6)
-plot(dend_plot)
-
-#Add back to data
-cluster_vars <- mutate(cluster_vars, cluster = tree_cut)
-
-#Plot transformed clusters
-cols <- brewer.pal(6, "Dark2")
-ggplot(cluster_vars, aes(x=ratioSLOW_boxcox, y=step_free_benefit_indexW, color = factor(cluster)))+
-  geom_point()+
-  labs(title = "Transformed Cluster Output",
-       x = "Box-Cox Transformed Travel Time Ratio, Slower Walking Speed",
-       y = "In-Need Population Index",
-       color = "Cluster")+
-  theme_minimal() +
-  scale_color_manual(values = cols) +
-  theme(
-    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
-    axis.title = element_text(family = "Segoe UI Semibold", size=10),
-    axis.text = element_text(family = "Segoe UI", size=9),
-    legend.title = element_text(family = "Segoe UI Semibold", size = 10),
-    legend.text = element_text(family = "Segoe UI", size = 9))
-  
-#Plot untransformed output
-ggplot(cluster_vars, aes(x=ratioSLOW, y=step_free_benefit_indexW, color = factor(cluster)))+
-  geom_point()+
-  labs(title = "Cluster Output, Untransformed",
-       x = "Travel Time Ratio, Slower Walking Speed",
-       y = "In-Need Population Index",
-       color = "Cluster")+
-  theme_minimal() +
-  scale_color_manual(values = cols) +
-  theme(
-    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
-    axis.title = element_text(family = "Segoe UI Semibold", size=10),
-    axis.text = element_text(family = "Segoe UI", size=9),
-    legend.title = element_text(family = "Segoe UI Semibold", size = 10),
-    legend.text = element_text(family = "Segoe UI", size = 9))
-
-#Map
-cluster_vars$cluster <- factor(cluster_vars$cluster)
-tmap_save(
-  tm_shape(cluster_vars) +
-    tm_polygons(
-      col = "cluster",
-      palette=cols,
-      title = "Cluster",
-      textNA = "",
-      alpha=0.8,
-      border.alpha=0) +
-    tm_shape(boroughs)+
-    tm_polygons(fill=NA, alpha=0, lwd=1.5)+
-    tm_basemap("Esri.OceanBasemap") +
-    tm_title("LSOAs by Accessibility Need Cluster") +
-    tm_compass(type = "8star",
-               size = 3,
-               position = c(0.9, 0.22)) +
-    tm_scalebar(
-      position = c(0.82, 0.08),
-      text.size = 0.7,
-      breaks = c(0, 5, 10)
-    ) +
-    tm_layout(
-      legend.position = c(0.01, 0.33),
-      legend.bg.color = "white",
-      legend.showNA = FALSE,
-      title.fontfamily = "Segoe UI Semibold",
-      title.size = 1.6,
-      legend.text.fontfamily = "Segoe UI",
-      legend.title.fontfamily = "Segoe UI Semibold",
-      legend.text.size = 0.8,
-      legend.title.size = 0.9),
-  filename = "maps/ratio_pop_clusters.png",
-  dpi=300)
-
-# cluster_vars <- cluster_vars %>%
-#   dplyr::select(-cluster)
-
-#Note I haven't done it with ratioCP as I couldn't create enough distance between the ratios of 1 and other values
-
 # ---- Station Catchment Analysis ------
 
 #Join data
@@ -1226,11 +1054,6 @@ tm_shape(cluster_vars)+
 # - Identify ideal stations
   # - Could do a multi-criteria analysis
   # - Could I consider jobs in catchment as an indicator of busyness/attractiveness?
-# - Run OTP directly in Java?!
-  #  java -Xmx2G -jar otp-2.2.0-shaded.jar --load graphs/accessible --serve
-  # - Or a for-loop, but unlikely to run on time
-  # - Or healthcare access? But dataset issues
-# - Or basic r5r where all non-fully-accessible stations are totally removed?
 # - New scenarios?
   # - Compare shortlisted
   # - Top tube stations by usage
@@ -1240,6 +1063,7 @@ tm_shape(cluster_vars)+
 #Clustering
   # - Could I do an easier variable?
   # - Find areas with a high proportion of in-need population which might be missed by TfL's approach
+#Also find quick linear correlations
 
 #Need to consider the issue that some travel times are really unrealistic
 #Links to very long walks due to remote centroids, a lack of non-TfL PT, and certain roads which are non-pedestrian-accessible
