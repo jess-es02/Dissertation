@@ -577,14 +577,6 @@ st_write(station_catchments_summary, "data_export_vis/station_catchments_summary
 
 rm(station_catchments_summary_accessible, station_catchments_summary_scaled)
 
-#To do:
-# - New scenarios?
-  # - Compare shortlisted
-  # - Top tube stations by usage
-  # - Compare centrality measure (simplified network - e.g. no buses, accessibility binary)
-  # - Top catchment - clusters
-# - How to assess?
-
 #Note limitations of not clustering on ratioSLOW - less representative of real-world constraints (but less biased towards larger LSOAs)
 #We might need a different clustering approach to account for LSOAs near accessible stations which are negatively affected by destination characteristics
 #Or could it be okay to exclude this, due to sufficientarism? Also, we see above that people whose nearest station is accessible have 97% job access, CP (although it can be as low as 50%)
