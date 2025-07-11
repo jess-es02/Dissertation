@@ -397,6 +397,35 @@ rm(cluster_vars_numeric_scaled, cluster_vars_df, cluster_vars_scaled, hc, hc_obj
 #st_write(cluster_vars, "data_export_vis/clusters.gpkg")
 #cluster_vars <- st_read("data_export_vis/clusters.gpkg")
 
+#Brief summary of attributes, by cluster (or cluster group)
+
+#Time
+summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(1)])
+summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(3)])
+summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(1, 3)])
+summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(2)])
+summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(4)])
+summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(5)])
+summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(6)])
+
+#Jobs
+summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(1)])
+summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(3)])
+summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(1, 3)])
+summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(2)])
+summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(4)])
+summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(5)])
+summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(6)])
+
+#Step-free index
+summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(1)])
+summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(3)])
+summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(1, 3)])
+summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(2)])
+summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(4)])
+summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(5)])
+summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(6)])
+
 # ----- Station Catchment Analysis -----
 
 #Join data
@@ -528,15 +557,25 @@ station_catchments_summary_scaled <- station_catchments_summary %>% #Reattach to
 #We need to shortlist the top 8 based on these catchment criteria
 
 #Variables being considered - remember we are focuing on equity:
-  #In-need population in clusters 1 and 3: 40%
-  #Accessibility disparities: 20% each
+  #In-need population in clusters 1 and 3: 60%
+  #Accessibility disparities: 10% each
   #In-need population: 20%
 
 station_catchments_summary_scaled <- station_catchments_summary_scaled %>%
-  mutate(total_score = total_in_need_cluster_1_or_3*.4+mean_time_ratioCP*.2+mean_job_ratioCP*.2+total_in_need_population*.2)
+  mutate(total_score = total_in_need_cluster_1_or_3*.6+mean_time_ratioCP*.1+mean_job_ratioCP*.1+total_in_need_population*.2)
 
-#Double-check how to do scoring
-#Make map (maybe with network chosen and TfL scenarios as well)
+#Add to overall df and rank
+station_catchments_summary <- station_catchments_summary %>%
+  left_join(station_catchments_summary_scaled %>% ungroup() %>% dplyr::select(fastest_station, total_score), by="fastest_station")%>%
+  arrange(desc(total_score))%>%
+  ungroup()%>%
+  mutate(rank = row_number())
+
+#Find ranks of TfL stations
+station_catchments_summary %>% filter(upgrade_status2=="Potential Upgrade") %>% dplyr::select(stop_name, upgrade_status, rank) %>% st_drop_geometry()
+st_write(station_catchments_summary, "data_export_vis/station_catchments_summary.gpkg")
+
+rm(station_catchments_summary_accessible, station_catchments_summary_scaled)
 
 #To do:
 # - New scenarios?
@@ -550,4 +589,4 @@ station_catchments_summary_scaled <- station_catchments_summary_scaled %>%
 #We might need a different clustering approach to account for LSOAs near accessible stations which are negatively affected by destination characteristics
 #Or could it be okay to exclude this, due to sufficientarism? Also, we see above that people whose nearest station is accessible have 97% job access, CP (although it can be as low as 50%)
 
-rm()
+#Note not all stations have no catchments, if they have no LSOAs which they are closest to! Limitation, except they are all Zone 1 so probably wouldn't be equity focus anyway

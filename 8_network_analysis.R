@@ -342,7 +342,6 @@ graph_node_change <- graph_node_change %>%
                 avg_path_length, avg_path_length_change, global_efficiency, efficiency_change, 
                 z_node_betweenness, z_avg_path_length_change, z_efficiency_change, top_overall_stations,
                 betweenness_top8, avg_path_length_top8, global_efficiency_top8, overall_top8)
-write.csv(graph_node_change, file="data_export_vis/graph_node_change.csv")
 
 top_8_betweenness <- graph_node_change %>%
   filter(betweenness_top8)%>%
@@ -372,6 +371,10 @@ top_8_overall <- graph_node_change %>%
 #TfL is also not exploring any of these
 #Big jump after Aldgate East
 #Note geographic concentration of these
+
+write.csv(graph_node_change, file="data_export_vis/graph_node_change.csv")
+graph_node_change <- read_csv("data_export_vis/graph_node_change.csv") %>%
+  dplyr::select(-1)
 
 # ----- Compare to TfL's choices -----
 
@@ -548,3 +551,24 @@ rm(cost_weights, gtfs_to_igraph, make_test_graph, remove_inaccessible_stations,
    overall_top_8_APL_avg, overall_top_8_betweess_avg, overall_top_8_efficiency_avg,
    non_step_free_nodes, node_betweenness, new_nodes, mapping, initial_efficiency, initial_avg_path_length, avg_path_length,
    vertices, graph_node_change_map, edges_df, edges_combined)
+
+#Compare priority stations to those from equity analysis
+
+#Rank
+graph_node_change <- graph_node_change %>%
+  arrange(desc(top_overall_stations))%>%
+  mutate(rank = row_number())
+
+#Compare to TfL's stations - TfL's are notably lower/less strategic!
+graph_node_change %>% filter(upgrade_status!="No Plans") %>% dplyr::select(stop_name, upgrade_status, rank)
+
+#Join to equity rank
+rank_comparison <- graph_node_change %>%
+  dplyr::select(node, stop_name, upgrade_status, rank) %>%
+  rename("network_rank" = rank) %>%
+  left_join(station_catchments_summary %>% st_drop_geometry %>% dplyr::select(fastest_station, rank), by=c("node"="fastest_station"))%>%
+  rename("equity_rank" = rank)
+
+ggplot(rank_comparison, aes(network_rank, equity_rank)) +
+  geom_point(alpha = 0.25) #No correlation
+cor.test(rank_comparison$network_rank, rank_comparison$equity_rank) #Cannot reject H0
