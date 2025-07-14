@@ -393,7 +393,7 @@ ggplot(cluster_vars, aes(x=time_ratioCP, y=inv_job_ratioCP, color = factor(clust
   #6: low in-need population, lower accessibility ratios -> lowest priority
   #7: low in-need population, higher accessibility ratios
 
-rm(cluster_vars_numeric_scaled, cluster_vars_df, cluster_vars_scaled, hc, hc_obj, sil_data, clusters, cols_changed, dist_mat, k, max_k, sil, tree_cut, inverse_normal_transform, avg_sil, dend_plot)
+rm(cluster_vars_numeric_scaled, cluster_vars_df, cluster_vars_scaled, hc, hc_obj, sil_data, clusters, dist_mat, k, max_k, sil, tree_cut, inverse_normal_transform, avg_sil, dend_plot)
 #st_write(cluster_vars, "data_export_vis/clusters.gpkg")
 #cluster_vars <- st_read("data_export_vis/clusters.gpkg")
 

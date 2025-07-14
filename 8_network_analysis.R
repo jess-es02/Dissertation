@@ -544,7 +544,7 @@ tmap_save(
 
 #When choosing top 8, we might need to choose a different one if there are three in the same area? 
 
-rm(cost_weights, gtfs_to_igraph, make_test_graph, remove_inaccessible_stations,
+rm(make_test_graph, remove_inaccessible_stations,
    total_efficiency, top_8_betweenness_avg, top_8_efficiency_avg, top_8_APL_avg,
    tfl_underway_stalled_APL_avg, tfl_underway_stalled_betweenness_avg, tfl_underway_stalled_efficiency_avg,
    tfl_evaluation_APL_avg, tfl_evaluation_betweenness_avg, tfl_evaluation_efficiency_avg,
