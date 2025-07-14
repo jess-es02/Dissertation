@@ -269,9 +269,239 @@ job_access_scenarios <- jobs_in_45_min %>%
   left_join(results_SLOW[["scenario4"]], by=c("lsoa21cd" = "from_id"))%>%
   rename("scenario4_jobsSLOW" = jobs_45_min)
 st_write(job_access_scenarios, "data_export_vis/job_access_scenarios.gpkg")
+job_access_scenarios <- st_read("data_export_vis/job_access_scenarios.gpkg")
 
 rm(jobs_accessibleCP, jobs_accessibleSLOW, results_CP, results_SLOW, scenario_ids, departure_times, scenario, cumulative_opportunities)
 
-#Need to calculate job ratios!
-#And beforehand coalesce nulls to zeroes
-#Then analysis: totals, averages, numbers in clusters, network efficiencies?
+#Coalesce zeroes, calculate job ratios
+job_access_scenarios <- job_access_scenarios %>%
+  mutate(across(matches("^scenario.*jobs"), ~ coalesce(., 0)))%>%
+  mutate(scenario1_ratioCP = scenario1_jobsCP/jobs_no_constraints,
+         scenario1_ratioSLOW = scenario1_jobsSLOW/jobs_no_constraints,
+         scenario2_ratioCP = scenario2_jobsCP/jobs_no_constraints,
+         scenario2_ratioSLOW = scenario2_jobsSLOW/jobs_no_constraints,
+         scenario3_ratioCP = scenario3_jobsCP/jobs_no_constraints,
+         scenario3_ratioSLOW = scenario3_jobsSLOW/jobs_no_constraints,
+         scenario4_ratioCP = scenario4_jobsCP/jobs_no_constraints,
+         scenario4_ratioSLOW = scenario4_jobsSLOW/jobs_no_constraints)%>%
+  mutate(across(matches("^scenario.*ratio"), ~ replace(., is.nan(.), 1)))
+
+#Calculate ratios over original CP
+job_access_scenarios <- job_access_scenarios %>%
+  mutate(scenario1_ratioCP_change = scenario1_jobsCP/original_jobs_CP,
+         scenario2_ratioCP_change = scenario2_jobsCP/original_jobs_CP,
+         scenario3_ratioCP_change = scenario3_jobsCP/original_jobs_CP,
+         scenario4_ratioCP_change = scenario4_jobsCP/original_jobs_CP)
+
+# ------- Assess Network Efficiencies -------
+
+#Remind ourselves of G_base's initial attributes:
+#global efficiency: 13.15386
+#apl: 0.1932217
+#average betweenness: 1445.037
+
+ge <- global_efficiency(G_base, weights = cost_weights(G_base), directed=TRUE)
+apl <- mean_distance(G_base, weights=cost_weights(G_base), directed=TRUE)
+btw <- betweenness(G_base, directed = TRUE, weights = cost_weights(G_base), normalized = FALSE)
+ab <- mean(btw, na.rm = TRUE) 
+
+#Create results dataframe
+scenario_network_efficiencies <- data.frame(
+  scenario = character(),
+  global_efficiency = numeric(),
+  average_path_length = numeric(),
+  avg_betweenness = numeric())
+
+for (i in 1:4) {
+
+  scenario_name <- paste0("final_r5r_scenario", i)
+  gtfs_path <- file.path(scenario_name, "gtfs.zip")
+
+  #We need to make some adjustments to the GTFS files for the function to run
+  gtfs <- gtfstools::read_gtfs(gtfs_path)
+  gtfs <- filter_by_weekday(gtfs, c("wednesday"))%>% #Simplify time-wise
+    filter_by_route_type(c(1, 2)) 
+  gtfs$stops <- gtfs$stops %>%
+    filter(stop_code!="") #Remove DLR
+  gtfs$stop_times <- gtfs$stop_times %>%
+    filter(stop_id %in% gtfs$stops$stop_id)
+  gtfs$trips <- gtfs$trips %>%
+    filter(trip_id %in% gtfs$stop_times$trip_id)
+  gtfs$routes <- gtfs$routes %>%
+    filter(route_id %in% gtfs$trips$route_id)
+  gtfs$stop_times <- gtfs$stop_times %>% #Represent stops by stops, rather than platforms
+    left_join(gtfs$stops %>% dplyr::select(stop_id, stop_code), by = "stop_id") %>%
+    mutate(stop_id = stop_code) %>%
+    dplyr::select(-stop_code)
+  gtfs$stops <- gtfs$stops %>%
+    mutate(stop_id = stop_code) %>%
+    group_by(stop_id) %>%
+    slice(1) %>%
+    ungroup()
+  gtfs$stops <- gtfs$stops %>% #Add necessary columns for function
+    mutate(location_type = 0,
+           parent_station = stop_id)
+  gtfs$trips <- gtfs$trips %>%
+    mutate(direction_id = 0)
+  gtfs_write(gtfs, folder = scenario_name, name = "gtfs_tube_only")
+  
+  my_gtfs_feeds <- list(file.path(scenario_name, "gtfs_tube_only.zip"))
+  G <- gtfs_to_igraph(list_gtfs = my_gtfs_feeds, dist_threshold=0, save_muxviz=FALSE)
+  
+  #Calculate edge weights, recreate graph
+  edges_df <- as_data_frame(G, what = "edges")
+  edges_combined <- edges_df %>%
+    group_by(from, to, avg_travel_time) %>%
+    summarise(weight = sum(weight), .groups = "drop")
+  edges_combined <- edges_combined %>%
+    mutate(weight_combined = weight / avg_travel_time)%>%
+    filter(from != to)
+  vertices <- as_data_frame(G, what = "vertices")
+  G <- graph_from_data_frame(edges_combined, directed = TRUE, vertices = vertices)
+  
+  #Calculate global efficiency, average path length, and average global betwenness
+  ge <- global_efficiency(G, weights = cost_weights(G), directed=TRUE)
+  apl <- mean_distance(G, weights=cost_weights(G), directed=TRUE)
+  btw <- betweenness(G, directed = TRUE, weights = cost_weights(G), normalized = FALSE)
+  ab <- mean(btw, na.rm = TRUE) 
+
+  #Append to results
+  scenario_network_efficiencies <- scenario_network_efficiencies %>%
+    add_row(
+      scenario = paste0("scenario", i),
+      global_efficiency = ge,
+      average_path_length = apl,
+      avg_betweenness = ab)
+}
+write.csv(scenario_network_efficiencies, "data_export_vis/scenario_network_efficiencies.csv")
+#Obviously scenario 4 is the most "efficient", but striking how similar scenario 3 is to scenario 2
+#(Except obviously remember that scenario 2 is only 7 upgrades vs 8)
+
+#Do results indicate that efficiency and APL aren't necessarily metrics to optimise? "Inefficiency" as inevitable if we are essentially expanding the network?
+#Betweenness seems more useful, except obviously practically harder to upgrade zone 1/2 spots
+
+rm(ab, apl, btw, ge, gtfs_path, i, scenario_name, cost_weights, gtfs_to_igraph, G, edges_df, edges_combined)
+
+# ----- Assess Job Ratios ------
+summary(job_access_scenarios$original_ratio_CP)
+summary(job_access_scenarios$scenario1_ratioCP)
+summary(job_access_scenarios$scenario2_ratioCP)
+summary(job_access_scenarios$scenario3_ratioCP)
+summary(job_access_scenarios$scenario4_ratioCP) #Prioritising more central stations as a more utilitarian approach than scenario 3? Greater total increase
+
+summary(job_access_scenarios$original_ratio_SLOW)
+summary(job_access_scenarios$scenario1_ratioSLOW)
+summary(job_access_scenarios$scenario2_ratioSLOW)
+summary(job_access_scenarios$scenario3_ratioSLOW)
+summary(job_access_scenarios$scenario4_ratioSLOW) #In reality, ratio change so small that it is futile??
+
+summary(job_access_scenarios$scenario1_ratioCP_change)
+summary(job_access_scenarios$scenario2_ratioCP_change)
+summary(job_access_scenarios$scenario3_ratioCP_change)
+summary(job_access_scenarios$scenario4_ratioCP_change) #Again, greatest overall increase in scenario 4 (rather than 3)
+#Numbers are still very small! Mean of 1.004 indicates an average of 0.4% increase in jobs, etc.
+
+#Overall changes
+total_original_jobs <- sum(job_access_scenarios$jobs_no_constraints)
+total_original_accessible_jobs <- sum(job_access_scenarios$original_jobs_CP)
+total_accessible_jobs_scenario1 <- sum(job_access_scenarios$scenario1_jobsCP)
+total_accessible_jobs_scenario2 <- sum(job_access_scenarios$scenario2_jobsCP)
+total_accessible_jobs_scenario3 <- sum(job_access_scenarios$scenario3_jobsCP)
+total_accessible_jobs_scenario4 <- sum(job_access_scenarios$scenario4_jobsCP)
+
+total_original_accessible_jobs/total_original_jobs #originally, only 81.47% of jobs accessible
+
+total_accessible_jobs_scenario1/total_original_jobs #scenario1: 81.55%
+total_accessible_jobs_scenario1/total_original_accessible_jobs #1.000986
+
+total_accessible_jobs_scenario2/total_original_jobs #scenario2: 81.53% (note only 7/8)
+total_accessible_jobs_scenario2/total_original_accessible_jobs #1.000677
+
+total_accessible_jobs_scenario3/total_original_jobs #scenario3: 82.11% - big jump from TfL scenarios (almost 8x gain)
+total_accessible_jobs_scenario3/total_original_accessible_jobs #1.007791
+
+total_accessible_jobs_scenario4/total_original_jobs #scenario4: 82.90% - big jump from TfL scenarios (approx 18x gain - but far less feasible)
+total_accessible_jobs_scenario4/total_original_accessible_jobs #1.017513
+
+rm(total_accessible_jobs_scenario1, total_accessible_jobs_scenario2, total_accessible_jobs_scenario3, total_accessible_jobs_scenario4, total_original_accessible_jobs, total_original_jobs)
+
+#Violin plot of changes
+pivoted <- job_access_scenarios %>%
+  st_drop_geometry() %>%
+  dplyr::select(original_jobs_CP, scenario1_jobsCP, scenario2_jobsCP, scenario3_jobsCP, scenario4_jobsCP) %>%
+  rename(
+    "Pre-Upgrades" = original_jobs_CP,
+    "Scenario 1" = scenario1_jobsCP,
+    "Scenario 2" = scenario2_jobsCP,
+    "Scenario 3" = scenario3_jobsCP,
+    "Scenario 4" = scenario4_jobsCP) %>%
+  pivot_longer(cols = everything(),
+               names_to = "type",
+               values_to = "value")
+pivoted$type <- factor(pivoted$type, levels = c("Pre-Upgrades", "Scenario 1", "Scenario 2", "Scenario 3", "Scenario 4"))
+
+ggplot(pivoted, aes(x = type, y = value, fill = type)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, outlier.shape = NA) +
+  labs(title = "Distribution of Accessible Jobs Within 45 Minutes",
+       x = "Scenario",
+       y = "Jobs") +
+  ylim(0, 600000) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma)+
+  theme(legend.position = "none")+
+  scale_fill_brewer(palette = "Dark2") +
+  theme(
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
+    axis.title = element_text(family = "Segoe UI Semibold", size=10),
+    axis.text = element_text(family = "Segoe UI", size=9),
+    axis.title.x = element_text(margin = margin(t = 10)))
+#Ultimately, all scenarios seem pretty similar! Although 3 and 4 have higher extremes
+
+#Display spread of increase among clusters:
+
+#Join to cluster info
+job_access_scenarios <- job_access_scenarios %>%
+  left_join(cluster_vars %>% st_drop_geometry %>% dplyr::select(lsoa21cd, cluster), by="lsoa21cd")
+
+#Calculate change per scenario
+job_access_scenarios <- job_access_scenarios %>%
+  mutate(scenario1_increase = scenario1_jobsCP-original_jobs_CP,
+         scenario2_increase = scenario2_jobsCP-original_jobs_CP,
+         scenario3_increase = scenario3_jobsCP-original_jobs_CP,
+         scenario4_increase = scenario4_jobsCP-original_jobs_CP)
+
+#Pivot data
+pivoted <- job_access_scenarios %>%
+  st_drop_geometry() %>%
+  dplyr::select(scenario1_increase, scenario2_increase, scenario3_increase, scenario4_increase, cluster) %>%
+  rename(
+    "Scenario 1" = scenario1_increase,
+    "Scenario 2" = scenario2_increase,
+    "Scenario 3" = scenario3_increase,
+    "Scenario 4" = scenario4_increase) %>%
+  pivot_longer(cols = -cluster,
+               names_to = "scenario",
+               values_to = "job_increase")
+pivoted$scenario <- factor(pivoted$scenario, levels = c("Scenario 1", "Scenario 2", "Scenario 3", "Scenario 4"))
+
+ggplot(pivoted, aes(x = scenario, y = job_increase, fill = cluster)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = cols_changed) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma)+
+  labs(title = "Additional Accessible Jobs by Origin LSOA Type",
+       x = NULL,
+       y = "Additional Jobs",
+       fill = "Cluster") +
+  theme(
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
+    axis.title = element_text(family = "Segoe UI Semibold", size=10),
+    axis.text = element_text(family = "Segoe UI", size=9),
+    legend.title = element_text(family = "Segoe UI Semibold", size = 10),
+    legend.text = element_text(family = "Segoe UI", size = 9))
+#Shows scenario 4 would actually be ideal, because benefits in clusters 1 and 3 are the same as in scenario 3 - but obviously less feasible
+#Note this will be double-counting lots of additional jobs! Rather than looking at raw numbers, it's more a useful indicator of who benefits most
+
+#We will want to compare locations of increases - particularly in scenarios 3 and 4 (and consider presence of in-need pop)
+#Then do travel time analysis
