@@ -404,6 +404,7 @@ summary(job_access_scenarios$scenario4_ratioCP_change) #Again, greatest overall 
 #Overall changes
 total_original_jobs <- sum(job_access_scenarios$jobs_no_constraints)
 total_original_accessible_jobs <- sum(job_access_scenarios$original_jobs_CP)
+
 total_accessible_jobs_scenario1 <- sum(job_access_scenarios$scenario1_jobsCP)
 total_accessible_jobs_scenario2 <- sum(job_access_scenarios$scenario2_jobsCP)
 total_accessible_jobs_scenario3 <- sum(job_access_scenarios$scenario3_jobsCP)
@@ -424,6 +425,43 @@ total_accessible_jobs_scenario4/total_original_jobs #scenario4: 82.90% - big jum
 total_accessible_jobs_scenario4/total_original_accessible_jobs #1.017513
 
 rm(total_accessible_jobs_scenario1, total_accessible_jobs_scenario2, total_accessible_jobs_scenario3, total_accessible_jobs_scenario4, total_original_accessible_jobs, total_original_jobs)
+
+#Total changes, weighted by numbers of disabled and non-disabled people
+calculations <- pop_centroids %>%
+  dplyr::select(id, total_disabled, total_pop)%>%
+  mutate(total_non_disabled = total_pop-total_disabled)%>%
+  left_join(job_access_scenarios, by=c("id" = "lsoa21cd"))
+calculations <- calculations %>%
+  mutate(jobs_non_disabled_multiplied = jobs_no_constraints * total_non_disabled,
+         jobs_original_CP_multiplied = original_jobs_CP * total_disabled,
+         scenario1_jobs_CP_multiplied = scenario1_jobsCP * total_disabled,
+         scenario2_jobs_CP_multiplied = scenario2_jobsCP * total_disabled,
+         scenario3_jobs_CP_multiplied = scenario3_jobsCP * total_disabled,
+         scenario4_jobs_CP_multiplied = scenario4_jobsCP * total_disabled)
+total_disabled <- sum(calculations$total_disabled)
+total_non_disabled <- sum(calculations$total_non_disabled)
+avg_jobs_non_disabled <- sum(calculations$jobs_non_disabled_multiplied)/total_non_disabled
+avg_original_jobs_disabled_CP <- sum(calculations$jobs_original_CP_multiplied)/total_disabled
+avg_scenario1_jobs_disabled_CP <- sum(calculations$scenario1_jobs_CP_multiplied)/total_disabled
+avg_scenario2_jobs_disabled_CP <- sum(calculations$scenario2_jobs_CP_multiplied)/total_disabled
+avg_scenario3_jobs_disabled_CP <- sum(calculations$scenario3_jobs_CP_multiplied)/total_disabled
+avg_scenario4_jobs_disabled_CP <- sum(calculations$scenario4_jobs_CP_multiplied)/total_disabled
+
+print(avg_jobs_non_disabled) #70672.32
+print(avg_original_jobs_disabled_CP) #58189.51
+print(avg_scenario1_jobs_disabled_CP) #58245.04
+print(avg_scenario2_jobs_disabled_CP) #58226.56 - considering it's 7/8, slightly better
+print(avg_scenario3_jobs_disabled_CP) #58641.41
+print(avg_scenario4_jobs_disabled_CP) #59142.47
+
+#As percentages
+round(100 * avg_original_jobs_disabled_CP/avg_jobs_non_disabled, 2) #CP: 82.3%
+round(100 * avg_scenario1_jobs_disabled_CP/avg_jobs_non_disabled, 2) #1: 82.4%
+round(100 * avg_scenario2_jobs_disabled_CP/avg_jobs_non_disabled, 2) #2: 82.4%
+round(100 * avg_scenario3_jobs_disabled_CP/avg_jobs_non_disabled, 2) #3: 83.0%
+round(100 * avg_scenario4_jobs_disabled_CP/avg_jobs_non_disabled, 2) #4: 83.7%
+
+rm(calculations, total_disabled, total_non_disabled, avg_jobs_non_disabled, avg_original_jobs_disabled_CP, avg_scenario1_jobs_disabled_CP, avg_scenario2_jobs_disabled_CP, avg_scenario3_jobs_disabled_CP, avg_scenario4_jobs_disabled_CP)
 
 #Violin plot of changes
 pivoted <- job_access_scenarios %>%
@@ -457,6 +495,30 @@ ggplot(pivoted, aes(x = type, y = value, fill = type)) +
     axis.text = element_text(family = "Segoe UI", size=9),
     axis.title.x = element_text(margin = margin(t = 10)))
 #Ultimately, all scenarios seem pretty similar! Although 3 and 4 have higher extremes
+
+#Changed correlation between in-need population and disparity
+job_access_scenarios <- job_access_scenarios %>%
+  left_join(pop_centroids %>% dplyr::select(id, step_free_benefit_indexW), by=c("lsoa21cd"="id"))
+#Original: 0.122
+cor.test(job_access_scenarios$original_ratio_CP, job_access_scenarios$step_free_benefit_indexW)
+ggplot(job_access_scenarios, aes(original_ratio_CP, step_free_benefit_indexW)) +
+  geom_point(alpha = 0.25)
+#Scenarios
+cor.test(job_access_scenarios$scenario1_ratioCP, job_access_scenarios$step_free_benefit_indexW)
+ggplot(job_access_scenarios, aes(scenario1_ratioCP, step_free_benefit_indexW)) +
+  geom_point(alpha = 0.25) #1: 0.120 - lower
+cor.test(job_access_scenarios$scenario2_ratioCP, job_access_scenarios$step_free_benefit_indexW)
+ggplot(job_access_scenarios, aes(scenario2_ratioCP, step_free_benefit_indexW)) +
+  geom_point(alpha = 0.25) #2: 0.121 - lower
+cor.test(job_access_scenarios$scenario3_ratioCP, job_access_scenarios$step_free_benefit_indexW)
+ggplot(job_access_scenarios, aes(scenario3_ratioCP, step_free_benefit_indexW)) +
+  geom_point(alpha = 0.25) #3: 0.125 - higher
+cor.test(job_access_scenarios$scenario4_ratioCP, job_access_scenarios$step_free_benefit_indexW)
+ggplot(job_access_scenarios, aes(scenario4_ratioCP, step_free_benefit_indexW)) +
+  geom_point(alpha = 0.25) #4: 0.120 - lowest
+#So scenario 3 is best at reducing the overall disparity
+#Disparity overall grows in others because disparities are improving in areas with lower in-need pops
+#But this presumably isn't a problem if scenario 4 is benefitting the same number of in-need? (see stacked bar chart)
 
 #Display spread of increase among clusters:
 
@@ -500,8 +562,148 @@ ggplot(pivoted, aes(x = scenario, y = job_increase, fill = cluster)) +
     axis.text = element_text(family = "Segoe UI", size=9),
     legend.title = element_text(family = "Segoe UI Semibold", size = 10),
     legend.text = element_text(family = "Segoe UI", size = 9))
+rm(pivoted)
 #Shows scenario 4 would actually be ideal, because benefits in clusters 1 and 3 are the same as in scenario 3 - but obviously less feasible
 #Note this will be double-counting lots of additional jobs! Rather than looking at raw numbers, it's more a useful indicator of who benefits most
+#Extra jobs are expected in 3 and 4, because highest disparity = highest potential job gains
 
-#We will want to compare locations of increases - particularly in scenarios 3 and 4 (and consider presence of in-need pop)
-#Then do travel time analysis
+#Catchment-wide comparison: this is useful to account for catchment sizes in TfL
+station_catchments <- fastest_time_to_stations %>%
+  dplyr::select(lsoa21cd, lsoa21nm, fastest_station) %>%
+  left_join(job_access_scenarios %>% st_drop_geometry() %>% dplyr::select(lsoa21cd, scenario1_increase, scenario2_increase, scenario3_increase, scenario4_increase), by = "lsoa21cd")%>%
+  left_join(pop_centroids %>% dplyr::select(id, total_pop, total_under_5, total_65_plus, total_disabled), by = c("lsoa21cd" = "id"))%>%
+  mutate(total_in_need_pop = total_under_5 + total_65_plus + total_disabled)%>%
+  dplyr::select(-total_under_5, -total_65_plus, -total_disabled)%>%
+  left_join(tube_stations_main %>% dplyr::select(stop_id, stop_name, classification, upgrade_status)%>%st_drop_geometry(), by=c("fastest_station"="stop_id"))
+job_access_catchments <- station_catchments %>%
+  group_by(fastest_station, stop_name, classification, upgrade_status) %>%
+  summarise(
+    total_population = sum(total_pop),
+    total_in_need_population = sum(total_in_need_pop),
+    scenario1_job_increase = sum(scenario1_increase),
+    scenario2_job_increase = sum(scenario2_increase),
+    scenario3_job_increase = sum(scenario3_increase),
+    scenario4_job_increase = sum(scenario4_increase))%>%
+  mutate(pct_in_need = 100*total_in_need_population/total_population)
+
+#Assess job increases x in-need population
+job_access_catchments <- job_access_catchments %>%
+  mutate(scenario1_impact = total_in_need_population*scenario1_job_increase,
+         scenario2_impact = total_in_need_population*scenario2_job_increase,
+         scenario3_impact = total_in_need_population*scenario3_job_increase,
+         scenario4_impact = total_in_need_population*scenario4_job_increase)
+sum(job_access_catchments$scenario1_impact) #3280833310
+sum(job_access_catchments$scenario2_impact) #4153822469
+sum(job_access_catchments$scenario3_impact) #23413417023
+sum(job_access_catchments$scenario4_impact) #33440720628
+
+sum(job_access_catchments$scenario3_impact)/sum(job_access_catchments$scenario1_impact) #7x more "impactful"
+sum(job_access_catchments$scenario4_impact)/sum(job_access_catchments$scenario1_impact) #10x more "impactful"
+#So we find that despite TfL's stations having larger catchment sizes, the impact on overall job accessibility is less pronounced
+
+#Proportion of LSOAs where there was some "impact"
+100 * sum(job_access_catchments$scenario1_impact != 0)/nrow(job_access_catchments) #16.1%
+100 * sum(job_access_catchments$scenario2_impact != 0)/nrow(job_access_catchments) #9.88%
+100 * sum(job_access_catchments$scenario3_impact != 0)/nrow(job_access_catchments) #38.42%
+100 * sum(job_access_catchments$scenario4_impact != 0)/nrow(job_access_catchments) #30.51%
+#So 3 and 4 as more dispersed
+#3 as more dispersed than 4? Will need to check this
+
+rm(station_catchments)
+
+#Plot absolute differences - manually change column
+breaks <- c(0, 1, 500, 5000, 10000, 20000, 50000, 100000, 200000, 400000)
+tmap_save(
+  tm_shape(job_access_scenarios) +
+    tm_polygons(
+      col = "scenario4_increase",
+      style="fixed",
+      breaks=breaks,
+      palette="rd_pu",
+      alpha=0.9,
+      title = "Difference",
+      textNA = "",
+      border.alpha=0) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    tm_title("Absolute Difference in Accessible Jobs, Scenario 4") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)) +
+    tm_layout(
+      bg.color = "grey80",
+      legend.outside = TRUE,
+      legend.outside.position = "right",
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.5,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/scenario4_absolute_diffCP.png",
+  dpi=300)
+
+#Tried a bivariate choropleth, but this didn't work because globally, scenario 4 outweighed the rest
+
+#Hatching any LSOAs in the top 10% and 25% of in-need population
+threshold75 <- quantile(job_access_scenarios$step_free_benefit_indexW, 0.75)
+threshold90 <- quantile(job_access_scenarios$step_free_benefit_indexW, 0.90)
+job_access_scenarios <- job_access_scenarios %>%
+  mutate(in_need25 = if_else(step_free_benefit_indexW>=threshold75, TRUE, FALSE),
+         in_need10 = if_else(step_free_benefit_indexW>=threshold90, TRUE, FALSE))
+tmap_save(
+  tm_shape(job_access_scenarios) +
+    tm_polygons(
+      col = "scenario4_increase",
+      style="fixed",
+      breaks=breaks,
+      palette="rd_pu",
+      alpha=0.9,
+      title = "Difference",
+      textNA = "",
+      border.alpha=0) +
+    tm_shape(job_access_scenarios %>% filter(scenario4_increase>0 & in_need25)) +
+    tm_borders(col = "blue", lwd = 1) +
+    tm_shape(job_access_scenarios %>% filter(scenario4_increase>0 & in_need10)) +
+    tm_borders(col = "red", lwd = 1) +
+    tm_add_legend(
+      type = "line",
+      labels = "Top 10% In-Need",
+      col = "red")+
+    tm_add_legend(
+      type = "line",
+      labels = "Top 25% In-Need",
+      col = "blue")+
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    tm_title("Absolute Difference in Accessible Jobs, Scenario 4") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)) +
+    tm_layout(
+      bg.color = "grey80",
+      legend.outside = TRUE,
+      legend.outside.position = "right",
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.5,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/scenario4_absolute_diffCP_hatched.png",
+  dpi=300)
+#Shows scenario 3 greatest gains are more concentrated in in-need areas, scenario 4 aren't really
+
+# ----- Assess Travel Time Results ------
