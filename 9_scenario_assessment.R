@@ -219,6 +219,7 @@ fastest_station_scenarios <- fastest_time_to_stations %>%
   mutate(scenario4_ratioCP = scenario4_timeCP/time_no_constraints,
          scenario4_ratioSLOW = scenario4_timeSLOW/time_no_constraints)
 st_write(fastest_station_scenarios, "data_export_vis/fastest_station_scenarios.gpkg")
+#fastest_station_scenarios <- st_read("data_export_vis/fastest_station_scenarios.gpkg")
 
 r5r::stop_r5(r5r_core)
 rJava::.jgc(R.gc = TRUE)
@@ -707,3 +708,310 @@ tmap_save(
 #Shows scenario 3 greatest gains are more concentrated in in-need areas, scenario 4 aren't really
 
 # ----- Assess Travel Time Results ------
+
+#Overall summaries
+summary(fastest_station_scenarios$time_no_constraints)
+summary(fastest_station_scenarios$original_timeCP)
+summary(fastest_station_scenarios$scenario1_timeCP)
+summary(fastest_station_scenarios$scenario2_timeCP)
+summary(fastest_station_scenarios$scenario3_timeCP)
+summary(fastest_station_scenarios$scenario4_timeCP) #Differences as fairly negligible, but scenario 3 "best"
+#Scenario 4 the "worst", likely due to geographic concentration of stations
+
+summary(fastest_station_scenarios$original_ratioCP)
+summary(fastest_station_scenarios$scenario1_ratioCP)
+summary(fastest_station_scenarios$scenario2_ratioCP)
+summary(fastest_station_scenarios$scenario3_ratioCP)
+summary(fastest_station_scenarios$scenario4_ratioCP)
+
+summary(fastest_station_scenarios$original_ratioSLOW)
+summary(fastest_station_scenarios$scenario1_ratioSLOW)
+summary(fastest_station_scenarios$scenario2_ratioSLOW)
+summary(fastest_station_scenarios$scenario3_ratioSLOW)
+summary(fastest_station_scenarios$scenario4_ratioSLOW)
+
+#Calculate absolute time savings
+fastest_station_scenarios <- fastest_station_scenarios %>%
+  mutate(scenario1_time_saving = original_timeCP-scenario1_timeCP,
+         scenario2_time_saving = original_timeCP-scenario2_timeCP,
+         scenario3_time_saving = original_timeCP-scenario3_timeCP,
+         scenario4_time_saving = original_timeCP-scenario4_timeCP)
+summary(fastest_station_scenarios$scenario1_time_saving)
+summary(fastest_station_scenarios$scenario2_time_saving)
+summary(fastest_station_scenarios$scenario3_time_saving)
+summary(fastest_station_scenarios$scenario4_time_saving)
+#Again, most pronounced for scenario 3
+
+#Overall changes
+total_original_time <- sum(fastest_station_scenarios$time_no_constraints)
+total_original_accessible_time <- sum(fastest_station_scenarios$original_timeCP)
+
+total_time_scenario1 <- sum(fastest_station_scenarios$scenario1_timeCP)
+total_time_scenario2 <- sum(fastest_station_scenarios$scenario2_timeCP)
+total_time_scenario3 <- sum(fastest_station_scenarios$scenario3_timeCP)
+total_time_scenario4 <- sum(fastest_station_scenarios$scenario4_timeCP)
+
+total_original_accessible_time/total_original_time #Originally, total travel to accessible stations was 15.6% higher
+
+total_time_scenario1/total_original_time #1: 14.2%
+total_time_scenario2/total_original_time #2: 13.3%
+total_time_scenario3/total_original_time #1: 13.1%
+total_time_scenario4/total_original_time #1: 14.8%
+
+#Total improvements over accessible baseline
+1- total_time_scenario1/total_original_accessible_time #1: 1.2%
+1-total_time_scenario2/total_original_accessible_time #2: 2.0%
+1-total_time_scenario3/total_original_accessible_time #3: 2.2%
+1-total_time_scenario4/total_original_accessible_time #4: 0.71%
+
+rm(total_original_time, total_original_accessible_time, total_time_scenario1, total_time_scenario2, total_time_scenario3, total_time_scenario4)
+
+#Total changes, weighted by numbers of disabled and non-disabled people
+calculations <- pop_centroids %>%
+  dplyr::select(id, total_disabled, total_pop)%>%
+  mutate(total_non_disabled = total_pop-total_disabled)%>%
+  left_join(fastest_station_scenarios, by=c("id" = "lsoa21cd"))%>%
+  mutate(scenario1_diffCP = scenario1_timeCP-time_no_constraints,
+         scenario1_diffSLOW = scenario1_timeSLOW-time_no_constraints,
+         scenario2_diffCP = scenario2_timeCP-time_no_constraints,
+         scenario2_diffSLOW = scenario2_timeSLOW-time_no_constraints,
+         scenario3_diffCP = scenario3_timeCP-time_no_constraints,
+         scenario3_diffSLOW = scenario3_timeSLOW-time_no_constraints,
+         scenario4_diffCP = scenario4_timeCP-time_no_constraints,
+         scenario4_diffSLOW = scenario4_timeSLOW-time_no_constraints)
+calculations <- calculations %>%
+  mutate(scenario1_diffCP_multiplied = scenario1_diffCP * total_disabled,
+         scenario1_diffSLOW_multiplied = scenario1_diffSLOW * total_disabled,
+         scenario2_diffCP_multiplied = scenario2_diffCP * total_disabled,
+         scenario2_diffSLOW_multiplied = scenario2_diffSLOW * total_disabled,
+         scenario3_diffCP_multiplied = scenario3_diffCP * total_disabled,
+         scenario3_diffSLOW_multiplied = scenario3_diffSLOW * total_disabled,
+         scenario4_diffCP_multiplied = scenario4_diffCP * total_disabled,
+         scenario4_diffSLOW_multiplied = scenario4_diffSLOW * total_disabled)
+total_disabled <- sum(calculations$total_disabled)
+
+#Average CP differences: originally 5.060888
+sum(calculations$scenario1_diffCP_multiplied)/total_disabled #1: 4.61 min
+sum(calculations$scenario2_diffCP_multiplied)/total_disabled #2: 4.38 min
+sum(calculations$scenario3_diffCP_multiplied)/total_disabled #3: 4.22 min
+sum(calculations$scenario4_diffCP_multiplied)/total_disabled #4: 4.79 min
+
+#Find average improvement over baseline
+baseline <- 5.060888
+(baseline - sum(calculations$scenario1_diffCP_multiplied)/total_disabled)/baseline * 100 #1: 8.92% improvement
+(baseline - sum(calculations$scenario2_diffCP_multiplied)/total_disabled)/baseline * 100 #2: 13.5% improvement
+(baseline - sum(calculations$scenario3_diffCP_multiplied)/total_disabled)/baseline * 100 #3: 16.6% improvement
+(baseline - sum(calculations$scenario4_diffCP_multiplied)/total_disabled)/baseline * 100 #4: 5.31% improvement
+
+#Average slow differences: originally 49.27623
+sum(calculations$scenario1_diffSLOW_multiplied)/total_disabled #1: 48.7 min
+sum(calculations$scenario2_diffSLOW_multiplied)/total_disabled #2: 48.0 min
+sum(calculations$scenario3_diffSLOW_multiplied)/total_disabled #3: 47.8 min
+sum(calculations$scenario4_diffSLOW_multiplied)/total_disabled #4: 48.9 min
+
+#Find average improvement over baseline
+baseline <- 49.27623
+(baseline - sum(calculations$scenario1_diffSLOW_multiplied)/total_disabled)/baseline * 100 #1: 1.22% improvement
+(baseline - sum(calculations$scenario2_diffSLOW_multiplied)/total_disabled)/baseline * 100 #2: 2.61% improvement
+(baseline - sum(calculations$scenario3_diffSLOW_multiplied)/total_disabled)/baseline * 100 #3: 3.09% improvement
+(baseline - sum(calculations$scenario4_diffSLOW_multiplied)/total_disabled)/baseline * 100 #4: 0.99% improvement
+
+rm(baseline, calculations, total_disabled)
+
+#Violin plot wasn't really able to differentiate time savings between scenarios!
+
+#Changes in correlation between disparity and in-need population
+fastest_station_scenarios <- fastest_station_scenarios %>%
+  left_join(pop_centroids %>% dplyr::select(id, step_free_benefit_indexW), by=c("lsoa21cd"="id"))
+
+#Original: -0.0617
+cor.test(fastest_station_scenarios$original_ratioCP, fastest_station_scenarios$step_free_benefit_indexW)
+ggplot(fastest_station_scenarios, aes(original_ratioCP, step_free_benefit_indexW)) +
+  geom_point(alpha = 0.25)
+
+#Scenarios
+cor.test(fastest_station_scenarios$scenario1_ratioCP, fastest_station_scenarios$step_free_benefit_indexW)
+ggplot(fastest_station_scenarios, aes(scenario1_ratioCP, step_free_benefit_indexW)) +
+  geom_point(alpha = 0.25) #1: -0.059697
+cor.test(fastest_station_scenarios$scenario2_ratioCP, fastest_station_scenarios$step_free_benefit_indexW)
+ggplot(fastest_station_scenarios, aes(scenario2_ratioCP, step_free_benefit_indexW)) +
+  geom_point(alpha = 0.25) #2: -0.05125878
+cor.test(fastest_station_scenarios$scenario3_ratioCP, fastest_station_scenarios$step_free_benefit_indexW)
+ggplot(fastest_station_scenarios, aes(scenario3_ratioCP, step_free_benefit_indexW)) +
+  geom_point(alpha = 0.25) #3: -0.06735296
+cor.test(fastest_station_scenarios$scenario4_ratioCP, fastest_station_scenarios$step_free_benefit_indexW)
+ggplot(fastest_station_scenarios, aes(scenario4_ratioCP, step_free_benefit_indexW)) +
+  geom_point(alpha = 0.25) #4: -0.05231448
+#So scenario 3 as the only which reduces extent of overall disparity - others benefit less in-need areas more
+#But does this matter if we consider overall change? Let's consider spread of time savings among groups
+
+#Join to cluster info
+fastest_station_scenarios <- fastest_station_scenarios %>%
+  left_join(cluster_vars %>% st_drop_geometry %>% dplyr::select(lsoa21cd, cluster), by="lsoa21cd")
+
+#Pivot data
+pivoted <- fastest_station_scenarios %>%
+  st_drop_geometry() %>%
+  dplyr::select(scenario1_time_saving, scenario2_time_saving, scenario3_time_saving, scenario4_time_saving, cluster) %>%
+  rename(
+    "Scenario 1" = scenario1_time_saving,
+    "Scenario 2" = scenario2_time_saving,
+    "Scenario 3" = scenario3_time_saving,
+    "Scenario 4" = scenario4_time_saving) %>%
+  pivot_longer(cols = -cluster,
+               names_to = "scenario",
+               values_to = "time_saving")
+pivoted$scenario <- factor(pivoted$scenario, levels = c("Scenario 1", "Scenario 2", "Scenario 3", "Scenario 4"))
+
+ggplot(pivoted, aes(x = scenario, y = time_saving, fill = cluster)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = cols_changed) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma)+
+  labs(title = "Cumulative Time Savings by Origin LSOA Type",
+       x = NULL,
+       y = "Reduction in Minutes to an Accessible Station",
+       fill = "Cluster") +
+  theme(
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5),
+    axis.title = element_text(family = "Segoe UI Semibold", size=10),
+    axis.text = element_text(family = "Segoe UI", size=9),
+    legend.title = element_text(family = "Segoe UI Semibold", size = 10),
+    legend.text = element_text(family = "Segoe UI", size = 9))
+rm(pivoted)
+
+#Catchment-wide comparison: this is useful to account for catchment sizes in TfL
+station_catchments <- fastest_time_to_stations %>%
+  dplyr::select(lsoa21cd, lsoa21nm, fastest_station) %>%
+  left_join(fastest_station_scenarios %>% st_drop_geometry() %>% dplyr::select(lsoa21cd, scenario1_time_saving, scenario2_time_saving, scenario3_time_saving, scenario4_time_saving), by = "lsoa21cd")%>%
+  left_join(pop_centroids %>% dplyr::select(id, total_pop, total_under_5, total_65_plus, total_disabled), by = c("lsoa21cd" = "id"))%>%
+  mutate(total_in_need_pop = total_under_5 + total_65_plus + total_disabled)%>%
+  dplyr::select(-total_under_5, -total_65_plus, -total_disabled)%>%
+  left_join(tube_stations_main %>% dplyr::select(stop_id, stop_name, classification, upgrade_status)%>%st_drop_geometry(), by=c("fastest_station"="stop_id"))
+time_saving_catchments <- station_catchments %>%
+  group_by(fastest_station, stop_name, classification, upgrade_status) %>%
+  summarise(
+    total_population = sum(total_pop),
+    total_in_need_population = sum(total_in_need_pop),
+    scenario1_time_savings = sum(scenario1_time_saving),
+    scenario2_time_savings = sum(scenario2_time_saving),
+    scenario3_time_savings = sum(scenario3_time_saving),
+    scenario4_time_savings = sum(scenario4_time_saving))%>%
+  mutate(pct_in_need = 100*total_in_need_population/total_population)
+
+#Assess job increases x in-need population
+time_saving_catchments <- time_saving_catchments %>%
+  mutate(scenario1_impact = total_in_need_population*scenario1_time_savings,
+         scenario2_impact = total_in_need_population*scenario2_time_savings,
+         scenario3_impact = total_in_need_population*scenario3_time_savings,
+         scenario4_impact = total_in_need_population*scenario4_time_savings)
+sum(time_saving_catchments$scenario1_impact) #25601528
+sum(time_saving_catchments$scenario2_impact) #47588740
+sum(time_saving_catchments$scenario3_impact) #60289551
+sum(time_saving_catchments$scenario4_impact) #7737384
+#Scenario 4 least impactful by far: smaller catchments = smaller populations and time savings
+
+sum(time_saving_catchments$scenario3_impact)/sum(time_saving_catchments$scenario1_impact) #2.4x more "impactful" than current upgrades
+sum(time_saving_catchments$scenario3_impact)/sum(time_saving_catchments$scenario2_impact) #1.3x more "impactful" than considered stations
+#So savings as still more pronounced for scenario 3 than 1 or 2 - but 4 as less so
+
+#Proportion of LSOAs where there was some "impact"
+100 * sum(time_saving_catchments$scenario1_impact != 0)/nrow(time_saving_catchments) #10.2%
+100 * sum(time_saving_catchments$scenario2_impact != 0)/nrow(time_saving_catchments) #8.47%
+100 * sum(time_saving_catchments$scenario3_impact != 0)/nrow(time_saving_catchments) #11.30%
+100 * sum(time_saving_catchments$scenario4_impact != 0)/nrow(time_saving_catchments) #11.58%
+#So 3 and 4 as more dispersed
+
+rm(station_catchments)
+
+#Plot absolute differences
+breaks <- c(0, 1, 10, 20, 30, 40, 50, 75, 100, 125, 150)
+tmap_save(
+  tm_shape(fastest_station_scenarios) +
+    tm_polygons(
+      col = "scenario4_time_saving",
+      style="fixed",
+      breaks=breaks,
+      palette="rd_pu",
+      alpha=0.9,
+      title = "Difference",
+      textNA = "",
+      border.alpha=0) +
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    tm_title("Absolute Difference in Time to Nearest Accessible Station, Scenario 4") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)) +
+    tm_layout(
+      bg.color = "grey80",
+      legend.outside = TRUE,
+      legend.outside.position = "right",
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/scenario4_absolute_diffCP_time.png",
+  dpi=300)
+
+#Emphasise in-need LSOAs
+fastest_station_scenarios <- fastest_station_scenarios %>%
+  mutate(in_need25 = if_else(step_free_benefit_indexW>=threshold75, TRUE, FALSE),
+         in_need10 = if_else(step_free_benefit_indexW>=threshold90, TRUE, FALSE))
+tmap_save(
+  tm_shape(fastest_station_scenarios) +
+    tm_polygons(
+      col = "scenario4_time_saving",
+      style="fixed",
+      breaks=breaks,
+      palette="rd_pu",
+      alpha=0.9,
+      title = "Difference",
+      textNA = "",
+      border.alpha=0) +
+    tm_shape(fastest_station_scenarios %>% filter(scenario4_time_saving>0 & in_need25)) +
+    tm_borders(col = "blue", lwd = 1) +
+    tm_shape(fastest_station_scenarios %>% filter(scenario4_time_saving>0 & in_need10)) +
+    tm_borders(col = "red", lwd = 1) +
+    tm_add_legend(
+      type = "line",
+      labels = "Top 10% In-Need",
+      col = "red")+
+    tm_add_legend(
+      type = "line",
+      labels = "Top 25% In-Need",
+      col = "blue")+
+    tm_shape(boroughs)+
+    tm_polygons(lwd=1, fill=NA, alpha=0)+
+    tm_title("Absolute Difference in Time to Nearest Accessible Station, Scenario 4") +
+    tm_compass(type = "8star",
+               size = 3,
+               position = c(0.9, 0.22)) +
+    tm_scalebar(
+      position = c(0.82, 0.08),
+      text.size = 0.7,
+      breaks = c(0, 5, 10)) +
+    tm_layout(
+      bg.color = "grey80",
+      legend.outside = TRUE,
+      legend.outside.position = "right",
+      legend.bg.color = "white",
+      legend.showNA = FALSE,
+      title.fontfamily = "Segoe UI Semibold",
+      title.size = 1.2,
+      legend.text.fontfamily = "Segoe UI",
+      legend.title.fontfamily = "Segoe UI Semibold",
+      legend.text.size = 0.8,
+      legend.title.size = 0.9),
+  filename = "maps/scenario4_absolute_diffCP_TIMEhatched.png",
+  dpi=300)
+
+rm(breaks, threshold75, threshold90)
