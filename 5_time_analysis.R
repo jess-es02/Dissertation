@@ -6,12 +6,8 @@
     # - For PwMD, this is the nearest accessible station
   # - Calculate summary statistics and create maps
   # - Assess local and global spatial autocorrelation in time ratios
-  # - Cluster LSOAs according to the disparity and presence of in-need population
-  # - Assess not-fully-accessible stations according to their catchment properties, and compare to TfL's shortlisted stations
 
-#Beforehand, ensure to run:
-  # 3_lsoa_processing.R
-  # 4_maps_summary_stats.R
+#Beforehand, ensure to run files 3-4
 
 library(tidyverse)
 library(sf)
