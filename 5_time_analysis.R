@@ -204,12 +204,20 @@ fastest_time_to_stations <- fastest_time_to_stations %>%
 st_write(fastest_time_to_stations, "data_export_vis/fastest_time_to_stations2.gpkg")
 #fastest_time_to_stations <- st_read("data_export_vis/fastest_time_to_stations2.gpkg")
 
+rm(all_stations, accessible_stations, missing_centroids, fastest_station2, fastest_station, fastest_stationWALK, fastest_accessible_station1, fastest_accessible_station2, fastest_accessible_stationWALK_CP)
+
 # ---- Quick summary stats --------
 
 #Identify stations where fastest station is (not) accessible
 fastest_time_to_stations <- fastest_time_to_stations %>%
   mutate(is_fastest_accessible = if_else(mean_fastest_station == mean_accessible_stationCP, TRUE, FALSE))
 summary(fastest_time_to_stations$is_fastest_accessible)
+
+#What proportion of the population is this
+fastest_station_pop_test <- fastest_time_to_stations %>%
+  left_join(pop_centroids %>% dplyr::select(id, total_pop), by=c("lsoa21cd"="id"))
+sum(fastest_station_pop_test[fastest_station_pop_test$is_fastest_accessible, ]$total_pop)/sum(fastest_station_pop_test$total_pop) #0.5393408
+rm(fastest_station_pop_test)
 
 #Calculate ratios
 fastest_time_to_stations <- fastest_time_to_stations %>%
@@ -258,6 +266,8 @@ print(avg_diffSLOW_WALK)
 #So the rest of the PT network, e.g. bus, tram, DLR, is doing a lot of the heavy lifting
 #Note this means that journeys for PwMD are more often multi-modal, complex, etc. - could be a deterrent
 
+rm(calculations, total_disabled, avg_diffCP, avg_diffSLOW, avg_diffCP_WALK, avg_diffSLOW_WALK, calculationsWALK)
+
 #Proportion of population living within 20 min of a station
 pop_proportions <- fastest_time_to_stations %>%
   left_join(pop_centroids, by=c("lsoa21cd" = "id"))%>%
@@ -283,6 +293,8 @@ pct_under_20min_non_disabled
 pct_under_20min_disabledCP
 pct_under_20min_disabledSLOW
 #Shows journey planner walking speed assumptions are bad
+
+rm(pop_proportions, total_non_disabled, total_disabled, pct_under_20min_non_disabled, pct_under_20min_disabledCP, pct_under_20min_disabledSLOW)
 
 # ---- Display results -----
 
@@ -310,7 +322,7 @@ ggplot(pivoted, aes(x = type, y = value, fill = type)) +
   labs(title = "Distribution of Travel Times to Stations",
        x = "Travel Type",
        y = "Time (minutes)",
-       caption = "Please note that the y axis actually extends further for the first two categories.") +
+       caption = "Please note that the y axis actually extends further upwards than shown on this graph.") +
   ylim(0, 200) +
   theme_minimal() +
   theme(legend.position = "none")+
@@ -946,3 +958,5 @@ ggsave(filename = "maps/bivariate_legend_disparity_pop.png",
 
 #Note "fastest" may not actually be in practice - consider issues for PwMD on buses, e.g. no space, ramps
 #Or closest accessible may not actually be ideal - e.g. further away from Zone 1
+
+rm(area_nb, area.lw, bi_data, bivariate_data, bv_moranCP, bv_moranSLOW, gearys_c_ratioCP, gearys_c_ratioSLOW, getis_ord_global_ratioCP, getis_ord_global_ratioSLOW, local_morans_i_ratioCP, local_morans_i_ratioSLOW, morans_i_global_ratioCP, morans_i_global_ratioSLOW, pivoted, bi_classes, bivariate_cols, break_labels, breaks, Gi_local_density_ratioCP, Gi_local_density_ratioSLOW, GIColours, labels, MoranColours, pal)

@@ -270,7 +270,7 @@ job_access_scenarios <- jobs_in_45_min %>%
   left_join(results_SLOW[["scenario4"]], by=c("lsoa21cd" = "from_id"))%>%
   rename("scenario4_jobsSLOW" = jobs_45_min)
 st_write(job_access_scenarios, "data_export_vis/job_access_scenarios.gpkg")
-job_access_scenarios <- st_read("data_export_vis/job_access_scenarios.gpkg")
+#job_access_scenarios <- st_read("data_export_vis/job_access_scenarios.gpkg")
 
 rm(jobs_accessibleCP, jobs_accessibleSLOW, results_CP, results_SLOW, scenario_ids, departure_times, scenario, cumulative_opportunities)
 
@@ -297,14 +297,14 @@ job_access_scenarios <- job_access_scenarios %>%
 # ------- Assess Network Efficiencies -------
 
 #Remind ourselves of G_base's initial attributes:
-#global efficiency: 13.15386
+#global efficiency: 0.0554036
 #apl: 0.1932217
 #average betweenness: 1445.037
 
-ge <- global_efficiency(G_base, weights = cost_weights(G_base), directed=TRUE)
-apl <- mean_distance(G_base, weights=cost_weights(G_base), directed=TRUE)
-btw <- betweenness(G_base, directed = TRUE, weights = cost_weights(G_base), normalized = FALSE)
-ab <- mean(btw, na.rm = TRUE) 
+original_ge <- global_efficiency(G_base, weights = cost_weights(G_base), directed=TRUE)
+original_apl <- mean_distance(G_base, weights=cost_weights(G_base), directed=TRUE)
+original_btw <- betweenness(G_base, directed = TRUE, weights = cost_weights(G_base), normalized = TRUE)
+original_ab <- mean(btw, na.rm = TRUE) 
 
 #Create results dataframe
 scenario_network_efficiencies <- data.frame(
@@ -363,7 +363,7 @@ for (i in 1:4) {
   #Calculate global efficiency, average path length, and average global betwenness
   ge <- global_efficiency(G, weights = cost_weights(G), directed=TRUE)
   apl <- mean_distance(G, weights=cost_weights(G), directed=TRUE)
-  btw <- betweenness(G, directed = TRUE, weights = cost_weights(G), normalized = FALSE)
+  btw <- betweenness(G, directed = TRUE, weights = cost_weights(G), normalized = TRUE)
   ab <- mean(btw, na.rm = TRUE) 
 
   #Append to results
@@ -374,6 +374,12 @@ for (i in 1:4) {
       average_path_length = apl,
       avg_betweenness = ab)
 }
+
+scenario_network_efficiencies <- scenario_network_efficiencies %>%
+  mutate(ge_change = global_efficiency-original_ge,
+         apl_change = average_path_length-original_apl,
+         avg_btw_change = avg_betweenness-original_ab)
+
 write.csv(scenario_network_efficiencies, "data_export_vis/scenario_network_efficiencies.csv")
 #Obviously scenario 4 is the most "efficient", but striking how similar scenario 3 is to scenario 2
 #(Except obviously remember that scenario 2 is only 7 upgrades vs 8)
@@ -381,7 +387,7 @@ write.csv(scenario_network_efficiencies, "data_export_vis/scenario_network_effic
 #Do results indicate that efficiency and APL aren't necessarily metrics to optimise? "Inefficiency" as inevitable if we are essentially expanding the network?
 #Betweenness seems more useful, except obviously practically harder to upgrade zone 1/2 spots
 
-rm(ab, apl, btw, ge, gtfs_path, i, scenario_name, cost_weights, gtfs_to_igraph, G, edges_df, edges_combined)
+rm(ab, apl, btw, ge, original_ab, original_apl, original_btw, original_ge, gtfs_path, i, scenario_name, cost_weights, gtfs_to_igraph, G, edges_df, edges_combined)
 
 # ----- Assess Job Ratios ------
 summary(job_access_scenarios$original_ratio_CP)

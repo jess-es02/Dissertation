@@ -82,7 +82,7 @@ tube_stations_main <- tube_stations_main %>%
 #Manually class Battersea Park as inaccessible - it is completely missing from TfL data, but online it says no platforms are accessible
 tube_stations_main <- tube_stations_main %>%
   mutate(classification = if_else(stop_id == 'BATRSPK', 'Inaccessible', classification))
-
+table(tube_stations_main$classification)
 rm(all_edges, components, connectivity_results, edges, G, station_groups, tube_stops)
 
 #Add stations TfL is considering for upgrades
@@ -100,6 +100,8 @@ tube_stations_main <- tube_stations_main %>%
     classification == "Fully Accessible" ~ "Already Accessible",
     TRUE ~ "No Plans"))
 rm(ongoing_work, under_evaluation, upgrades_stalled)
+
+table(tube_stations_main$upgrade_status)
 
 #Join to fare zone data
 tfl_fare_zones <- read_csv("data/tfl_station_data_detailed/Stations.csv")%>%
@@ -210,7 +212,6 @@ tmap_save(
 rm(to_trips, bbox_boundary, bbox_stations)
 
 # ------ Study area map -------
-#This assumes lsoa_processing has been run first
 
 tmap_save(
 tm_shape(study_lsoas) +

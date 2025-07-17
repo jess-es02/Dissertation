@@ -150,14 +150,17 @@ cluster_vars <- cluster_vars %>% #quick fix
 #For now, I'm going to use ratioCP, because the ratioSLOW values for job accessibility seem biased towards larger LSOAs (and thus reveal less about station impacts)
 
 #Explore distributions
-cluster_vars_df <- cluster_vars%>%st_drop_geometry()%>%rename("step_free_population_index"=step_free_benefit_indexW,
+cluster_vars_df <- cluster_vars%>%st_drop_geometry()%>%rename("step_free_pop_index"=step_free_benefit_indexW,
                                                               "time_ratio" = time_ratioCP,
                                           "inverse_job_ratio"=inv_job_ratioCP)
-ggpairs(cluster_vars_df[, c("time_ratio", "inverse_job_ratio", "step_free_population_index")],
+ggpairs(cluster_vars_df[, c("time_ratio", "inverse_job_ratio", "step_free_pop_index")],
         upper = list(continuous = "points"),
         diag = list(continuous = "densityDiag"),
         lower = list(continuous = "smooth"))+
-  theme_minimal(base_family = "Segoe UI")
+  labs(title = "Distribution of Equity-Based Variables") +
+  theme_minimal(base_family = "Segoe UI")+
+  theme(
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5))
 #Index is normally distributed
 #Both accessibility ratios are positively skewed
 
@@ -176,14 +179,17 @@ cluster_vars$inv_job_ratioCP_rank <- inverse_normal_transform(cluster_vars$inv_j
 cluster_vars$time_ratioCP_rank <- inverse_normal_transform(cluster_vars$time_ratioCP)
 #I actually think rank-based works well because some ratios are insane; 10x is still bad, even though it's far from 1000x
 
-cluster_vars_df <- cluster_vars%>%st_drop_geometry()%>%rename("step_free_population_index"=step_free_benefit_indexW,
+cluster_vars_df <- cluster_vars%>%st_drop_geometry()%>%rename("step_free_pop_index"=step_free_benefit_indexW,
                                                               "time_ratio_rank" = time_ratioCP_rank,
                                                               "inverse_job_ratio_rank"=inv_job_ratioCP_rank)
-ggpairs(cluster_vars_df[, c("time_ratio_rank", "inverse_job_ratio_rank", "step_free_population_index")],
+ggpairs(cluster_vars_df[, c("time_ratio_rank", "inverse_job_ratio_rank", "step_free_pop_index")],
         upper = list(continuous = "points", alpha=0.5),
         diag = list(continuous = "densityDiag"),
         lower = list(continuous = "smooth"))+
-  theme_minimal(base_family = "Segoe UI")
+  labs(title = "Transformed Distribution of Equity-Based Variables") +
+  theme_minimal(base_family = "Segoe UI")+
+  theme(
+    plot.title = element_text(family = "Segoe UI Semibold", size = 16, hjust=0.5))
 
 #Now let's standardise them so the scales are the same
 cluster_vars_numeric_scaled <- cluster_vars %>%
@@ -258,7 +264,6 @@ cols_changed <- c(
 cluster_vars$cluster <- factor(cluster_vars$cluster)
 
 #Map clusters
-#cols <- brewer.pal(7, "Dark2")
 tmap_save(
   tm_shape(cluster_vars) +
     tm_polygons(
@@ -401,30 +406,39 @@ rm(cluster_vars_numeric_scaled, cluster_vars_df, cluster_vars_scaled, hc, hc_obj
 
 #Time
 summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(1)])
-summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(3)])
-summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(1, 3)])
 summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(2)])
+summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(3)])
 summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(4)])
 summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(5)])
 summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(6)])
+summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(7)])
+
+summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(1, 3)])
+summary(cluster_vars$time_ratioCP[cluster_vars$cluster %in% c(2, 4, 5, 6, 7)])
 
 #Jobs
 summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(1)])
-summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(3)])
-summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(1, 3)])
 summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(2)])
+summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(3)])
 summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(4)])
 summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(5)])
 summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(6)])
+summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(7)])
+
+summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(1, 3)])
+summary(cluster_vars$inv_job_ratioCP[cluster_vars$cluster %in% c(2, 4, 5, 6, 7)])
 
 #Step-free index
 summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(1)])
-summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(3)])
-summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(1, 3)])
 summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(2)])
+summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(3)])
 summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(4)])
 summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(5)])
 summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(6)])
+summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(7)])
+
+summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(1, 3)])
+summary(cluster_vars$step_free_benefit_indexW[cluster_vars$cluster %in% c(2, 4, 5, 6, 7)])
 
 # ----- Station Catchment Analysis -----
 

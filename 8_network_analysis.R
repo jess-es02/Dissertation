@@ -393,6 +393,7 @@ tfl_underway_stalled_betweenness_avg <- graph_node_change %>%
   summarise(mean_betweenness = mean(node_betweenness))%>%
   pull(mean_betweenness)
 
+mean(graph_node_change$node_betweenness) #0.04273658
 top_8_betweenness_avg #0.2781044
 overall_top_8_betweess_avg #0.2589847
 tfl_evaluation_betweenness_avg #0.01677108
@@ -413,6 +414,7 @@ tfl_underway_stalled_APL_avg <- graph_node_change %>%
   summarise(mean_APL_change = mean(avg_path_length_change))%>%
   pull(mean_APL_change)
 
+mean(graph_node_change$avg_path_length_change) #0.001759596
 top_8_APL_avg #-0.00354567
 overall_top_8_APL_avg #-0.002053026
 tfl_evaluation_APL_avg #-0.0007065138
@@ -433,9 +435,10 @@ tfl_underway_stalled_efficiency_avg <- graph_node_change %>%
   summarise(mean_efficiency_change = mean(efficiency_change))%>%
   pull(mean_efficiency_change)
 
+mean(graph_node_change$efficiency_change) #0.03014467
 top_8_efficiency_avg #0.4132295
 overall_top_8_efficiency_avg #0.3571965
-tfl_evaluation_efficiency_avg #-0.01847125 !
+tfl_evaluation_efficiency_avg #-0.01847125
 tfl_underway_stalled_efficiency_avg #-0.03059623
 
 # ---- Maps -----
@@ -550,7 +553,7 @@ rm(make_test_graph, remove_inaccessible_stations,
    tfl_evaluation_APL_avg, tfl_evaluation_betweenness_avg, tfl_evaluation_efficiency_avg,
    overall_top_8_APL_avg, overall_top_8_betweess_avg, overall_top_8_efficiency_avg,
    non_step_free_nodes, node_betweenness, new_nodes, mapping, initial_efficiency, initial_avg_path_length, avg_path_length,
-   vertices, graph_node_change_map, edges_df, edges_combined)
+   vertices, graph_node_change_map, edges_df, edges_combined, G)
 
 #Compare priority stations to those from equity analysis
 

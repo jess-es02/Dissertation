@@ -18,7 +18,6 @@ library(tidyverse)
 # ------- Job EDA ---------
 
 #First, let's examine the distribution of jobs as opportunities
-#lsoa_processing and maps_summary_stats.R should already have been run
 
 #Join workforce population to LSOA sf, get jobs per km^2
 study_lsoas_work <- study_lsoas %>%
@@ -86,21 +85,13 @@ morans_i <- study_lsoas_work %>%
   moran.test(., area.lw)
 morans_i
 
-#Potential extensions:
-  #Check for local spatial autocorrelation
-  #Distribution and LISA facet map?
-  #Associations with hospital POI?
+rm(area_nb, area.lw, morans_i, study_lsoas_work, breaks)
 
 # ------- Cumulative Opportunities: All Stations ------
 r5r_core <- setup_r5(data_path = "final_r5r", verbose=TRUE)
 
 #For some reason the accessibility function is not working properly, so we will instead manually define a function using travel_time_matrix
-
 #Use same departure times as previously
-departure_times <- as.POSIXct(c(
-  "2025-10-08 11:00:00",
-  "2025-10-08 11:05:00",
-  "2025-10-08 11:10:00"))
 
 cumulative_opportunities <- function(origins,
                                      destinations, 
@@ -289,6 +280,8 @@ jobs_in_20_min <- study_lsoas %>%
   mutate(across(starts_with("jobs_"), ~ coalesce(., 0)))
 
 st_write(jobs_in_20_min, "data_export_vis/jobs_in_20_min.gpkg")
+#jobs_in_20_min <- st_read("data_export_vis/jobs_in_20_min.gpkg")
+
 rm(jobs_standard20, jobs_accessibleCP_20, jobs_accessibleSLOW_20)
 
 r5r::stop_r5(r5r_core)
@@ -376,8 +369,8 @@ summary(jobs_in_45_min$CP_PTbenefit)
 summary(jobs_in_45_min$SLOW_PTbenefit)
 
 #Proportions of jobs accessed through PT
-median(jobs_in_45_min$standard_PTbenefit)/median(jobs_in_45_min$jobs_standard)
-median(jobs_in_45_min$CP_PTbenefit)/median(jobs_in_45_min$jobs_accessibleCP)
+mean(jobs_in_45_min$standard_PTbenefit)/mean(jobs_in_45_min$jobs_standard)
+mean(jobs_in_45_min$CP_PTbenefit)/mean(jobs_in_45_min$jobs_accessibleCP)
 median(jobs_in_45_min$SLOW_PTbenefit)/median(jobs_in_45_min$jobs_accessibleSLOW)
 
 #Quick 20 min comparison
@@ -452,7 +445,7 @@ round(100 * avg_jobs_disabled_SLOW/avg_jobs_non_disabled, 2) #Slow: 2.36%
 #So even still, it's not as pronounced as expected
 #I also tried for only LSOAs within 2km of tube stops and proportions were v similar (80.6%, 2.36%)
 
-rm(total_disabled, total_non_disabled, calculations, avg_jobs_non_disabled, avg_jobs_disabled_CP, avg_jobs_disabled_SLOW, jobs_in_45_min_NEW_AREA)
+rm(total_disabled, total_non_disabled, calculations, avg_jobs_non_disabled, avg_jobs_disabled_CP, avg_jobs_disabled_SLOW, jobs_in_45_min_NEW_AREA, boroughs_to_remove)
 
 # ----- Display Results -----
 
@@ -480,7 +473,7 @@ ggplot(pivoted, aes(x = type, y = value, fill = type)) +
   labs(title = "Distribution of Accessible Jobs Within 45 Minutes",
        x = "Travel Type",
        y = "Jobs",
-       caption = "Please note that the y axis actually extends further for the first two categories.") +
+       caption = "Please note that the y axis actually extends further upwards for the first two categories.") +
   ylim(0, 100000) +
   theme_minimal() +
   theme(legend.position = "none")+
@@ -749,4 +742,4 @@ tmap_save(
 #We can use the same legends as for the travel time analysis
 #Again, slower walking speeds in this context as not particularly helpful - bias towards larger LSOAs
 
-rm(bi_classes, boroughs_to_remove, pal, bi_data, bivariate_data, boroughs_to_keep)
+rm(bi_classes, pal, bi_data, bivariate_data, boroughs_to_keep)
