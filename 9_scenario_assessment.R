@@ -608,13 +608,19 @@ sum(job_access_catchments$scenario3_impact)/sum(job_access_catchments$scenario1_
 sum(job_access_catchments$scenario4_impact)/sum(job_access_catchments$scenario1_impact) #10x more "impactful"
 #So we find that despite TfL's stations having larger catchment sizes, the impact on overall job accessibility is less pronounced
 
-#Proportion of LSOAs where there was some "impact"
+#Proportion of catchments where there was some "impact"
 100 * sum(job_access_catchments$scenario1_impact != 0)/nrow(job_access_catchments) #16.1%
 100 * sum(job_access_catchments$scenario2_impact != 0)/nrow(job_access_catchments) #9.88%
 100 * sum(job_access_catchments$scenario3_impact != 0)/nrow(job_access_catchments) #38.42%
 100 * sum(job_access_catchments$scenario4_impact != 0)/nrow(job_access_catchments) #30.51%
 #So 3 and 4 as more dispersed
 #3 as more dispersed than 4? Will need to check this
+
+#Proportion of LSOAs where there was some "impact"
+100 * sum(job_access_scenarios$scenario1_increase != 0)/nrow(job_access_scenarios) #3.27%
+100 * sum(job_access_scenarios$scenario2_increase != 0)/nrow(job_access_scenarios) #2.37%
+100 * sum(job_access_scenarios$scenario3_increase != 0)/nrow(job_access_scenarios) #10.29%%
+100 * sum(job_access_scenarios$scenario4_increase != 0)/nrow(job_access_scenarios) #7.52%
 
 rm(station_catchments)
 
@@ -922,11 +928,11 @@ sum(time_saving_catchments$scenario3_impact)/sum(time_saving_catchments$scenario
 #So savings as still more pronounced for scenario 3 than 1 or 2 - but 4 as less so
 
 #Proportion of LSOAs where there was some "impact"
-100 * sum(time_saving_catchments$scenario1_impact != 0)/nrow(time_saving_catchments) #10.2%
-100 * sum(time_saving_catchments$scenario2_impact != 0)/nrow(time_saving_catchments) #8.47%
-100 * sum(time_saving_catchments$scenario3_impact != 0)/nrow(time_saving_catchments) #11.30%
-100 * sum(time_saving_catchments$scenario4_impact != 0)/nrow(time_saving_catchments) #11.58%
-#So 3 and 4 as more dispersed
+100 * sum(fastest_station_scenarios$scenario1_time_saving != 0)/nrow(fastest_station_scenarios) #5.07%
+100 * sum(fastest_station_scenarios$scenario2_time_saving != 0)/nrow(fastest_station_scenarios) #4.63%
+100 * sum(fastest_station_scenarios$scenario3_time_saving != 0)/nrow(fastest_station_scenarios) #7.44%
+100 * sum(fastest_station_scenarios$scenario4_time_saving != 0)/nrow(fastest_station_scenarios) #3.41%
+#So 3 as more dispersed
 
 rm(station_catchments)
 
@@ -1020,4 +1026,5 @@ tmap_save(
   filename = "maps/scenario4_absolute_diffCP_TIMEhatched.png",
   dpi=300)
 
-rm(breaks, threshold75, threshold90)
+#Clean environment to only keep useful dataframes for results
+rm(breaks, threshold75, threshold90, boroughs, boundary, G_base, gtfs, london_codes, my_gtfs_feeds, vertices, cols_changed)
