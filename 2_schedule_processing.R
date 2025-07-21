@@ -552,9 +552,6 @@ r5r_core <- setup_r5(data_path = "final_r5r", verbose=TRUE)
 #Some stops and centroids had to be manually moved to make them reachable via the street/PT network (see above)
 #And obviously note limitations with no elevation data, lack of consideration of road micro-geographies, etc.
 
-#Note that for the LSOAs very far away, detailed_itineraries returns much more realistic outputs than travel_time_matrix
-#Need to consider how this affects the accessibility function
-
 stop_r5(r5r_core)
 rJava::.jgc(R.gc = TRUE)
 

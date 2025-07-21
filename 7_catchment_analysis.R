@@ -544,7 +544,7 @@ ggplot(numeric_vars, aes(x = upgrade_status2, y = value, fill = upgrade_status2)
 
 #So we can see that TfL prioritises catchments with larger populations
 #But accessibility ratios are on average lower than no-plans
-#Does have higher raw populations in clusters 1+3 (probably due to having larger pops in general)
+#Though there are higher raw populations in clusters 1+3 (probably due to having larger pops in general)
 rm(numeric_vars, station_catchments, labels)
 
 #Quick cluster map with stations
@@ -595,4 +595,4 @@ rm(station_catchments_summary_accessible, station_catchments_summary_scaled)
 #We might need a different clustering approach to account for LSOAs near accessible stations which are negatively affected by destination characteristics
 #Or could it be okay to exclude this, due to sufficientarism? Also, we see above that people whose nearest station is accessible have 97% job access, CP (although it can be as low as 50%)
 
-#Note not all stations have no catchments, if they have no LSOAs which they are closest to! Limitation, except they are all Zone 1 so probably wouldn't be equity focus anyway
+#Note not all stations have catchments, if they have no LSOAs which they are closest to! Limitation, except they are all Zone 1 so probably wouldn't be equity focus anyway
