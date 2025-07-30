@@ -1,6 +1,6 @@
 # Assessing Step-Free Accessibility Disparities on the London Underground
 
-This repository hosts the complete code for my Masters Dissertation, provisionally entitled "Prioritising London Underground Step-Free Upgrades to Promote Equitable Mobility for Disabled Passengers". Below is an explanation of each script, alongside extra information for reproducibility purposes.
+This repository hosts the complete code for my Masters Dissertation, entitled "An Equity-Focused Approach to Prioritise Step-Free Upgrades on the London Underground". Below is an explanation of each script, alongside extra information for reproducibility purposes.
 
 ## Scripts
 Although each script is intended to be run after the other, 1 and 2 can be skipped if the user manually imports the resultant GTFS files from the OneDrive link provided below.
@@ -11,9 +11,9 @@ Although each script is intended to be run after the other, 1 and 2 can be skipp
 4. **maps_summary_stats.R**: produces maps of the study area and summary statistics about the present level of step-free access.
 5. **time_analysis.R**: uses r5r to assess the disparity in travel time from each LSOA centroid to its nearest station compared to its nearest accessible station.
 6. **cumulative_opportunities.R**: uses r5r to assess the disparity in job accessibility when using the standard versus wheelchair-accessible travel network.
-7. **catchment_analysis.R**: clusters LSOAs based on disparities in job accessibility and time to stations, alongside presence of in-need populations. This is used to identify stations which should be prioritised in an equity-based scenario.
-8. **network_analysis.R**: represents the step-free tube network as a graph and simulates adding non-step-free stations. Efficiency and centrality measures are calculated, thereby identifying stations to be prioritised in an efficiency-based scenario.
-9. **scenario_assessment.R**: compares the equity and efficiency scenarios with the stations TfL is considering for step-free upgrades.
+7. **catchment_analysis.R**: clusters LSOAs based on disparities in job accessibility and time to stations, alongside presence of in-need populations. This is used to identify stations which should be prioritised in an egalitarian-aligned scenario.
+8. **network_analysis.R**: represents the step-free tube network as a graph and simulates adding non-step-free stations. Efficiency and centrality measures are calculated, thereby identifying stations to be prioritised in a utilitarian-aligned scenario.
+9. **scenario_assessment.R**: compares the egalitarian and utilitarian scenarios with the stations TfL is considering for step-free upgrades.
 
 There are also two standalone scripts:
 * **gtfs_to_igraph.R**: this is a (slightly) modified version of a function written by [Rafael Pereira](https://github.com/rafapereirabr/gtfs_to_igraph) which converts GTFS files into an iGraph object, used in file 8.
@@ -27,7 +27,7 @@ Other key files can be downloaded from [this OneDrive link](https://liveuclac-my
 1. **national_rail_atoc.zip**: the GTFS file for all National Rail services, downloaded on 29/05/2025. This should be saved to the folder `large_data`. Otherwise, this can be downloaded at the start of script 1. 
 2. **london_traveline.zip**: the GTFS file for all non-rail London public transport services, downloaded from the [Traveline](https://www.travelinedata.org.uk/traveline-open-data/traveline-national-dataset/) website on 09/05/2025. This should be saved into `large_data`. While this can be downloaded again from Traveline, I recommend using the version I used, as a lot of the issues I had to correct (e.g. problematic IDs) are likely version-specific.
 3. **gtfs.zip**: the final GTFS file for the whole of London, produced in script 2. This should be saved to a folder entitled `final_r5r`.
-4. **gtfs_accessible.zip**: an OpenTripPlanner wheelchair-accessible GTFS file, produced in script 2. Although this was not used in the final dissertation, please see the otp_example.R script for a demonstration of its use.
+4. **gtfs_accessible.zip**: an OpenTripPlanner-compatible wheelchair-accessible GTFS file, produced in script 2. Although this was not used in the final dissertation, please see the otp_example.R script for a demonstration of its use.
 5. **planet_-0.972,51.228_0.3339,51.7629.osm.pbf**: the OSM street network, downloaded from bbike on 06/06/2025. It should be saved to the `final_r5r` folder.
 
 Please note that the National Rail and Traveline data are free to share and adapt under the [Open Government License](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/), while the OSM street network is free to share under the [Open Database License](https://www.openstreetmap.org/copyright). 
