@@ -392,12 +392,17 @@ tfl_underway_stalled_betweenness_avg <- graph_node_change %>%
   filter(upgrade_status %in% c('Project Underway', 'Project Stalled')) %>%
   summarise(mean_betweenness = mean(node_betweenness))%>%
   pull(mean_betweenness)
+tfl__betweenness_avg <- graph_node_change %>%
+  filter(upgrade_status != "No Plans") %>%
+  summarise(mean_betweenness = mean(node_betweenness))%>%
+  pull(mean_betweenness)
 
 mean(graph_node_change$node_betweenness) #0.04273658
 top_8_betweenness_avg #0.2781044
 overall_top_8_betweess_avg #0.2589847
 tfl_evaluation_betweenness_avg #0.01677108
 tfl_underway_stalled_betweenness_avg #0.04451955
+tfl__betweenness_avg #0.03429643
 
 #APL Change
 top_8_APL_avg <- mean(top_8_APL$avg_path_length_change)
@@ -413,12 +418,17 @@ tfl_underway_stalled_APL_avg <- graph_node_change %>%
   filter(upgrade_status %in% c('Project Underway', 'Project Stalled')) %>%
   summarise(mean_APL_change = mean(avg_path_length_change))%>%
   pull(mean_APL_change)
+tfl_APL_avg <- graph_node_change %>%
+  filter(upgrade_status !="No Plans") %>%
+  summarise(mean_APL_change = mean(avg_path_length_change))%>%
+  pull(mean_APL_change)
 
 mean(graph_node_change$avg_path_length_change) #0.001759596
 top_8_APL_avg #-0.00354567
 overall_top_8_APL_avg #-0.002053026
 tfl_evaluation_APL_avg #-0.0007065138
 tfl_underway_stalled_APL_avg #0.01165389 - would actually lead to an increase in APL (though not necessarily bad - more peripheral nodes = longer routes)
+tfl_APL_avg #0.007100059
 
 #Efficiency Change
 top_8_efficiency_avg <- mean(top_8_efficiency$efficiency_change)
@@ -434,12 +444,17 @@ tfl_underway_stalled_efficiency_avg <- graph_node_change %>%
   filter(upgrade_status %in% c('Project Underway', 'Project Stalled')) %>%
   summarise(mean_efficiency_change = mean(efficiency_change))%>%
   pull(mean_efficiency_change)
+tfl_efficiency_avg <- graph_node_change %>%
+  filter(upgrade_status != "No Plans") %>%
+  summarise(mean_efficiency_change = mean(efficiency_change))%>%
+  pull(mean_efficiency_change)
 
 mean(graph_node_change$efficiency_change) #0.03014467
 top_8_efficiency_avg #0.4132295
 overall_top_8_efficiency_avg #0.3571965
 tfl_evaluation_efficiency_avg #-0.01847125
 tfl_underway_stalled_efficiency_avg #-0.03059623
+tfl_efficiency_avg #-0.02612913
 
 # ---- Maps -----
 
