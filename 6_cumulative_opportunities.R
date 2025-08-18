@@ -38,11 +38,11 @@ tmap_save(
                 #border.col = "bisque4",
                 border.alpha = 0,
                 title = "Workers per km\u00B2",
-                palette="Peach",
+                palette="bu_pu",
                 textNA = "") +
     tm_shape(boroughs)+
     tm_polygons(alpha=0, fill=NA)+
-    tm_basemap("Esri.OceanBasemap") +
+    #tm_basemap("Esri.OceanBasemap") +
     tm_title("Distribution of Jobs Across Study LSOAs") +
     tm_compass(type = "8star", 
                size = 3, 
@@ -51,6 +51,7 @@ tmap_save(
                 text.size = 0.7, 
                 breaks = c(0, 5, 10))+
     tm_layout(legend.position = c(0.01, 0.3), 
+              bg.color = "grey80",
               legend.bg.color="white",
               legend.showNA = FALSE,
               title.fontfamily = "Segoe UI Semibold",
